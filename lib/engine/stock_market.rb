@@ -4,10 +4,11 @@ require_relative 'share_price'
 
 module Engine
   class StockMarket
-    attr_reader :market, :par_prices
+    attr_reader :market, :par_prices, :has_close_cell
 
     def initialize(market, unlimited_types, multiple_buy_types: [], zigzag: nil)
       @par_prices = []
+      @has_close_cell = false
       @zigzag = zigzag
       @market = market.map.with_index do |row, r_index|
         row.map.with_index do |code, c_index|
@@ -17,6 +18,7 @@ module Engine
                                        unlimited_types,
                                        multiple_buy_types: multiple_buy_types)
           @par_prices << price if price&.can_par?
+          @has_close_cell = true if price&.type == :close
           price
         end
       end
@@ -114,6 +116,11 @@ module Engine
       share_price = share_price(row, column)
       return if share_price == corporation.share_price
       return if !force && !share_price.normal_movement?
+
+      if corporation.max_share_price == corporation.share_price
+        r, c = corporation.share_price.coordinates
+        return if row > r || column > c
+      end
 
       corporation.share_price.corporations.delete(corporation)
       corporation.share_price = share_price

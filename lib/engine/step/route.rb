@@ -29,17 +29,22 @@ module Engine
         entity = action.entity
         @round.routes = action.routes
         trains = {}
+        abilities = []
+
         @round.routes.each do |route|
           train = route.train
-          @game.game_error("Cannot run another corporation's train. refresh") if train.owner && train.owner != entity
-          @game.game_error('Cannot run train twice') if trains[train]
-          @game.game_error('Cannot run train that operated') if train.operated
+          raise GameError, "Cannot run another corporation's train. refresh" if train.owner && train.owner != entity
+          raise GameError, 'Cannot run train twice' if trains[train]
+          raise GameError, 'Cannot run train that operated' if train.operated
 
           trains[train] = true
-          @log << "#{entity.name} runs a #{train.name} train for "\
-            "#{@game.format_currency(route.revenue)}: #{@game.revenue_str(route)}"
+          revenue = @game.format_currency(route.revenue)
+          @log << "#{entity.name} runs a #{train.name} train for #{revenue}: #{route.revenue_str}"
+          abilities.concat(route.abilities) if route.abilities
         end
         pass!
+
+        abilities.uniq.each { |type| @game.abilities(action.entity, type, time: 'route')&.use! }
       end
 
       def available_hex(entity, hex)

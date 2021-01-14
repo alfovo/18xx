@@ -31,7 +31,7 @@ module View
         if @game.game_end_check_values.include?(:bank)
           trs << h(:tr, [
             h(:td, 'Cash'),
-            h('td.right', @game.format_currency(@game.bank.cash)),
+            h('td.right', @game.format_currency(@game.bank_cash)),
           ])
         end
         if (rate = @game.interest_rate)
@@ -68,8 +68,14 @@ module View
             h('td.right', @game.format_currency(@game.round.active_step.seed_money)),
           ])
         end
+        if @game.respond_to?(:unstarted_corporation_summary)
+          trs << h(:tr, [
+            h(:td, 'Unstarted corporations'),
+            h('td.right', @game.unstarted_corporation_summary),
+          ])
+        end
 
-        return unless trs.any?
+        return h(:div) if trs.empty?
 
         h('div.bank.card', [
           h('div.title.nowrap', title_props, [h(:em, 'The Bank')]),

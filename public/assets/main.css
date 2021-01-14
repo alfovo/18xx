@@ -23,12 +23,18 @@ button, .button_link {
   cursor: pointer;
   text-decoration: none;
 }
+.button_link {
+  display: inline-block; /* else padding doesn’t work => different height than button */
+}
 button.small {
   padding: 0.2rem 0.5rem;
   margin-right: 0.5rem;
 }
 button:last-child, button.par_price:nth-of-type(6n), button.sell_share:nth-of-type(3n) {
   margin-right: 0;
+}
+button:disabled {
+  background: gray;
 }
 
 h2 {
@@ -53,7 +59,7 @@ p {
   a:active {
     outline: 0;
   }
-  button:hover, .button_link:hover {
+  button:hover:not([disabled]), .button_link:hover {
     background: black;
     border-color: gainsboro;
     color: gainsboro;
@@ -66,6 +72,11 @@ p {
     outline: 0;
     opacity: 0.8;
   }
+}
+
+button.active {
+  background: lightblue;
+  color: black;
 }
 
 input, select, textarea {
@@ -293,6 +304,7 @@ text.number {
   margin: 0.5rem 0.5rem 0 0;
   border: 1px solid gainsboro;
   border-radius: 0.7rem;
+  align-self: start;
 }
 .game.card {
   margin: 0 0.5rem 0.5rem 0;
@@ -340,14 +352,35 @@ table.center {
 
 #chatlog {
   height: 200px;
+  resize: vertical;
 }
 @media only screen and (min-width: 900px) {
   #homepage #chatlog {
     height: 350px;
   }
 }
+.timestamp.hidden {
+  visibility: hidden;
+}
+.chatline:hover > .timestamp.hidden {
+  visibility: visible;
+}
 
 div.game.card em {
   font-style: normal;
   text-decoration: underline;
+}
+
+#history {
+  float: left;
+}
+
+#undo {
+  float: right;
+}
+
+@media only screen and (max-width: 420px) {
+  #undo {
+    float: left;
+  }
 }

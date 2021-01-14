@@ -15,6 +15,10 @@ module Engine
 
       attr_reader :bids
 
+      def auctioneer?
+        true
+      end
+
       def pass_description
         if auctioning
           "Pass (on #{auctioning.id})"
@@ -61,6 +65,10 @@ module Engine
         raise NotImplementedError
       end
 
+      def max_place_bid(entity, company)
+        max_bid(entity, company)
+      end
+
       def max_bid(_entity, _company)
         # Maximum that a bid can be increased to by an entity
         raise NotImplementedError
@@ -81,13 +89,14 @@ module Engine
         entity = bid.entity
         price = bid.price
         min = min_bid(company)
-        @game.game_error("Minimum bid is #{@game.format_currency(min)} for #{company.name}") if price < min
+        raise GameError, "Minimum bid is #{@game.format_currency(min)} for #{company.name}" if price < min
         if @game.class::MUST_BID_INCREMENT_MULTIPLE && ((price - min) % @game.class::MIN_BID_INCREMENT).nonzero?
-          @game.game_error("Must increase bid by a multiple of #{@game.class::MIN_BID_INCREMENT}")
+          raise GameError, "Must increase bid by a multiple of #{@game.class::MIN_BID_INCREMENT}"
         end
         if price > max_bid(entity, company)
-          @game.game_error("Cannot afford bid. Maximum possible bid is #{max_bid(entity, company)}")
+          raise GameError, "Cannot afford bid. Maximum possible bid is #{max_bid(entity, company)}"
         end
+
         bids = @bids[company]
         bids.reject! { |b| b.entity == entity }
         bids << bid
@@ -95,7 +104,12 @@ module Engine
 
       def bids_for_player(player)
         @bids.values.map do |bids|
-          bids.find { |bid| bid.entity == player }
+          if @game.class::ONLY_HIGHEST_BID_COMMITTED
+            highest_bid = bids.max_by(&:price)
+            highest_bid if highest_bid&.entity == player
+          else
+            bids.find { |bid| bid.entity == player }
+          end
         end.compact
       end
     end

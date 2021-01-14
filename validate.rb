@@ -19,7 +19,8 @@ def run_game(game, actions = nil)
   begin
     $total += 1
     time = Time.now
-    engine = Engine::GAMES_BY_TITLE[game.title].new(game.ordered_players.map(&:name), id: game.id, actions: actions, optional_rules: game.settings['optional_rules'] || [])
+    engine = Engine::Game.load(game).maybe_raise!
+
     time = Time.now - time
     $total_time += time
     data['finished']=true
@@ -35,7 +36,7 @@ def run_game(game, actions = nil)
   data
 end
 
-def validate_all(*titles)
+def validate_all(*titles, game_ids: nil)
   $count = 0
   $total = 0
   $total_time = 0
@@ -44,6 +45,7 @@ def validate_all(*titles)
 
   where_args = {Sequel.pg_jsonb_op(:settings).has_key?('pin') => false, status: %w[active finished]}
   where_args[:title] = titles if titles.any?
+  where_args[:id] = game_ids if game_ids
 
   DB[:games].order(:id).where(**where_args).select(:id).paged_each(rows_per_fetch: 100) do |game|
     page << game
@@ -102,11 +104,12 @@ def revalidate_broken(filename)
   File.write("revalidate.json", JSON.pretty_generate(data))
 end
 
-def validate_json(filename)
-  data = JSON.parse(File.read(filename))
-  players = data['players'].map { |p| p['name'] }
-  engine = Engine::GAMES_BY_TITLE[data['title']]
-  engine.new(players, id: data['id'], actions: data['actions'], optional_rules: data.dig('settings', 'optional_rules') || [])
+def validate_json(filename, strict: false)
+  game = Engine::Game.load(filename, strict: strict)
+  if game.exception
+    puts game.broken_action.to_h
+  end
+  game.maybe_raise!
 end
 
 def pin_games(pin_version, game_ids)

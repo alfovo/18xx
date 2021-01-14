@@ -19,7 +19,8 @@ module Engine
 
         def process_lay_tile(action)
           @mexico_city_double_hex_lay = false
-          @game.game_error('Cannot do normal tile lay') unless can_lay_tile?(action.entity)
+          raise GameError, 'Cannot do normal tile lay' unless can_lay_tile?(action.entity)
+
           lay_tile_action(action)
           lay_in_other_hex_of_double_hex(action) if MEXICO_CITY_DOUBLE_HEX.include?(action.hex.id)
           pass! unless remaining_tile_lay?(action.entity)
@@ -35,7 +36,7 @@ module Engine
           return super unless entity.minor?
 
           home_hex = @game.hex_by_id(entity.coordinates)
-          return @game.tile_cost(home_hex.tile, entity) <= entity.cash if home_hex.tile.color == :white
+          return @game.upgrade_cost(home_hex.tile, home_hex, entity) <= entity.cash if home_hex.tile.color == :white
 
           super
         end
@@ -44,7 +45,8 @@ module Engine
 
         def remaining_tile_lay?(entity)
           can_lay_tile?(entity) ||
-          (@game.p2_company.owner == entity && @game.p2_company.abilities(:tile_lay)&.count&.positive?)
+            (@game.p2_company.owner == entity &&
+             @game.abilities(@game.p2_company, :tile_lay, time: 'track')&.count&.positive?)
         end
 
         def lay_in_other_hex_of_double_hex(action)

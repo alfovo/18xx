@@ -22,6 +22,8 @@ module View
         gray: '#888888',
         green: '#aaffaa',
         white: '#ffffff',
+        olive: '#d1e189',
+        purple: '#9a4eae',
       }.freeze
 
       # All markets
@@ -29,6 +31,7 @@ module View
       BORDER = 1
       WIDTH_TOTAL = 50                            # of entire box, including border
       TOKEN_SIZE = 25
+      TOKEN_SIZES = { small: 25, medium: 32, large: 40 }.freeze
 
       # 1D markets
       VERTICAL_TOKEN_PAD = 4                      # vertical space between tokens
@@ -68,13 +71,38 @@ module View
         }
       end
 
-      def cell_style(box_style, price)
-        color = @game.class::STOCKMARKET_COLORS[price.type]
+      def cell_style(box_style, types)
+        color = @game.class::STOCKMARKET_COLORS[types&.first]
         style = box_style.merge(backgroundColor: color ? COLOR_MAP[color] : color_for(:bg2))
+        if types.include?(:convert_range)
+          # This only works on 1D at present
+
+          style[:borderTopColor] = style[:borderBottomColor] = COLOR_MAP[:blue]
+          style[:borderTopWidth] = style[:borderBottomWidth] = "#{BORDER * 2}px"
+          unless @previous_convert_range
+            style[:borderLeftColor] = style[:borderTopColor]
+            style[:borderLeftWidth] = style[:borderTopWidth]
+          end
+
+          if types.first == :convert_range
+            # If it's first, we're in the key
+            style[:borderRightColor] = style[:borderTopColor]
+            style[:borderRightWidth] = style[:borderTopWidth]
+          end
+          @previous_convert_range = true
+        else
+          @previous_convert_range = false
+        end
+
+        if types.include?(:max_price)
+          style[:borderRightWidth] = "#{BORDER * 4}px"
+          style[:borderRightColor] = COLOR_MAP[:purple]
+        end
         if color == :black
           style[:color] = 'gainsboro'
           style[:borderColor] = color_for(:font)
         end
+
         style
       end
 
@@ -89,14 +117,16 @@ module View
       end
 
       def grid_1d
-        max_num_corps = @game.stock_market.market.first.map { |p| p.corporations.size }.push(MIN_NUM_TOKENS).max
-        box_height = max_num_corps * (TOKEN_SIZE + VERTICAL_TOKEN_PAD) + VERTICAL_TOKEN_PAD + PRICE_HEIGHT + 2 * PAD
+        token_height = @game.stock_market.market.first.map do |p|
+          p.corporations.sum { |c| TOKEN_SIZES[@game.corporation_size(c)] + VERTICAL_TOKEN_PAD }
+        end.push(MIN_NUM_TOKENS * (TOKEN_SIZE + VERTICAL_TOKEN_PAD)).max
+        box_height = token_height + VERTICAL_TOKEN_PAD + PRICE_HEIGHT + 2 * PAD
         height = "#{box_height - 2 * PAD - 2 * BORDER}px"
 
         row = @game.stock_market.market.first.map do |price|
           tokens = price.corporations.map do |corporation|
             props = {
-              attrs: { src: corporation.logo, width: "#{TOKEN_SIZE}px" },
+              attrs: { src: corporation.logo, width: "#{TOKEN_SIZES[@game.corporation_size(corporation)]}px" },
               style: { marginTop: "#{VERTICAL_TOKEN_PAD}px" },
             }
             h(:img, props)
@@ -106,7 +136,7 @@ module View
           box_style[:height] = height
           box_style = box_style.merge('margin-right': '10px') unless price.normal_movement?
 
-          h(:div, { style: cell_style(box_style, price) }, [
+          h(:div, { style: cell_style(box_style, price.types) }, [
             grid_1d_price(price),
             h(:div, { style: TOKEN_STYLE_1D }, tokens),
           ])
@@ -127,18 +157,18 @@ module View
         half_box_style[:height] = "#{box_height - 2 * PAD - 2 * BORDER}px"
 
         row0 = []
-        row1 = [h(:div, style: cell_style(half_box_style, @game.stock_market.market.first.first))]
+        row1 = [h(:div, style: cell_style(half_box_style, @game.stock_market.market.first.first.types))]
 
         @game.stock_market.market.first.each_with_index do |price, idx|
           tokens = price.corporations.map do |corporation|
             props = {
-              attrs: { src: corporation.logo, width: "#{TOKEN_SIZE}px" },
+              attrs: { src: corporation.logo, width: "#{TOKEN_SIZES[@game.corporation_size(corporation)]}px" },
               style: { marginTop: "#{VERTICAL_TOKEN_PAD}px" },
             }
             h(:img, props)
           end
 
-          element = h(:div, { style: cell_style(box_style, price) }, [
+          element = h(:div, { style: cell_style(box_style, price.types) }, [
                       h(:div, { style: PRICE_STYLE_1D }, price.price),
                       h(:div, { style: TOKEN_STYLE_1D }, tokens),
                     ])
@@ -149,7 +179,7 @@ module View
           end
         end
 
-        row1 << h(:div, style: cell_style(half_box_style, @game.stock_market.market.first.last))
+        row1 << h(:div, style: cell_style(half_box_style, @game.stock_market.market.first.last.types))
 
         [h(:div, { style: { width: 'max-content' } }, row0),
          h(:div, { style: { width: 'max-content' } }, row1)]
@@ -175,7 +205,7 @@ module View
                 h(:img, props)
               end
 
-              h(:div, { style: cell_style(@box_style_2d, price) }, [
+              h(:div, { style: cell_style(@box_style_2d, price.types) }, [
                 h(:div, { style: { fontSize: '80%' } }, price.price),
                 h(:div, tokens),
               ])
@@ -232,7 +262,8 @@ module View
           type_text = @game.class::MARKET_TEXT
           colors = @game.class::STOCKMARKET_COLORS
 
-          types_in_market = @game.stock_market.market.flatten.compact.map { |p| [p.type, colors[p.type]] }.to_h
+          types_in_market = @game.stock_market.market.flatten.compact.flat_map(&:types)
+          .uniq.map { |p| [p, colors[p]] }.to_h
 
           type_text.each do |type, text|
             next unless types_in_market.include?(type)
@@ -253,7 +284,7 @@ module View
             }
 
             children << h(:div, line_props, [
-              h(:div, { style: style }, []),
+              h(:div, { style: cell_style(@box_style_2d, [type]) }, []),
               h(:div, text),
             ])
           end

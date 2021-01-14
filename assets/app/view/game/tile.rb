@@ -14,7 +14,10 @@ module View
   module Game
     class Tile < Snabberb::Component
       needs :tile
-      needs :routes, default: [], store: true
+      needs :routes, default: []
+
+      needs :show_coords, default: nil
+      needs :show_location_names, default: true
 
       # helper method to pass @tile and @region_use to every part
       def render_tile_part(part_class, **kwargs)
@@ -48,32 +51,60 @@ module View
         children = []
 
         render_revenue = should_render_revenue?
-        children << render_tile_part(Part::Track, routes: @routes) if @tile.paths.any? || @tile.stubs.any?
-        children << render_tile_part(Part::Cities, show_revenue: !render_revenue) if @tile.cities.any?
-        children << render_tile_part(Part::Towns, routes: @routes) if @tile.towns.any?
+        children << render_tile_part(Part::Track, routes: @routes) if !@tile.paths.empty? || !@tile.stubs.empty?
+        children << render_tile_part(Part::Cities, show_revenue: !render_revenue) unless @tile.cities.empty?
+        children << render_tile_part(Part::Towns, routes: @routes) unless @tile.towns.empty?
 
-        borders = render_tile_part(Part::Borders) if @tile.borders.any?
+        borders = render_tile_part(Part::Borders) if @tile.borders.any?(&:type)
         # OO tiles have different rules...
         rendered_loc_name = render_tile_part(Part::LocationName) if @tile.location_name && @tile.cities.size > 1
 
         children << render_tile_part(Part::Revenue) if render_revenue
         children << render_tile_part(Part::Label) if @tile.label
 
-        children << render_tile_part(Part::Upgrades) if @tile.upgrades.any?
+        children << render_tile_part(Part::Upgrades) unless @tile.upgrades.empty?
         children << render_tile_part(Part::Blocker)
         rendered_loc_name = render_tile_part(Part::LocationName) if @tile.location_name && (@tile.cities.size <= 1)
         @tile.reservations.each { |x| children << render_tile_part(Part::Reservation, reservation: x) }
-        children << render_tile_part(Part::Icons) if @tile.icons.any?
+        children << render_tile_part(Part::Icons) unless @tile.icons.empty?
 
-        children << render_tile_part(Part::Assignments) if @tile.hex.assignments.any?
+        children << render_tile_part(Part::Assignments) unless @tile.hex&.assignments&.empty?
         # borders should always be the top layer
         children << borders if borders
+        children << render_tile_part(Part::Partitions) unless @tile.partitions.empty?
 
-        children << rendered_loc_name if rendered_loc_name
+        children << rendered_loc_name if rendered_loc_name && @show_location_names
+        children << render_coords if @show_coords
 
         children.flatten!
 
         h('g.tile', children)
+      end
+
+      def rotation
+        @rotation ||=
+          if @tile.hex.layout == :pointy
+            'rotate(-30) translate(62 40.5)'
+          else
+            'rotate(0) translate(32 70.02)'
+          end
+      end
+
+      def render_coords
+        props = {
+          attrs: {
+            'dominant-baseline': 'central',
+            fill: 'black',
+            transform: rotation,
+          },
+          style: {
+            fontSize: '24px',
+          },
+        }
+
+        h(:g, [
+          h(:text, props, @tile.hex.coordinates),
+          ])
       end
     end
   end

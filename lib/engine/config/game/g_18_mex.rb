@@ -112,12 +112,12 @@ module Engine
       "479MC":{
          "count":1,
          "color":"green",
-         "code":"city=revenue:40,slots:2,loc:center;town=revenue:0,loc:2.5;path=a:3,b:_0;path=a:5,b:_0;label=MC"
+         "code":"city=revenue:40,slots:2,loc:center;town=revenue:0,loc:2.5;path=a:3,b:_0;path=a:5,b:_0;label=MC;border=edge:5"
       },
       "479P":{
          "count":1,
          "color":"green",
-         "code":"town=revenue:10;path=a:2,b:_0;path=a:_0,b:5;upgrade=cost:40,terrain:mountain;label=P"
+         "code":"town=revenue:10;path=a:2,b:_0;path=a:_0,b:5;upgrade=cost:40,terrain:mountain;label=P;border=edge:2"
       },
       "480":1,
       "481":1,
@@ -137,12 +137,12 @@ module Engine
       "486MC":{
          "count":1,
          "color":"brown",
-         "code":"city=revenue:50,slots:4,loc:center;town=revenue:10,loc:2;path=a:0,b:_0;path=a:1,b:_0;path=a:3,b:_0;path=a:2,b:_1;path=a:5,b:_0,lanes:2;path=a:_1,b:_0;label=MC"
+         "code":"city=revenue:50,slots:4,loc:center;town=revenue:10,loc:2;path=a:0,b:_0;path=a:1,b:_0;path=a:3,b:_0;path=a:2,b:_1;path=a:5,b:_0,lanes:2;path=a:_1,b:_0;label=MC;border=edge:5"
       },
       "486P":{
          "count":1,
          "color":"brown",
-         "code":"town=revenue:10;path=a:2,b:_0,a_lane:2.1;path=a:5,b:_0;path=a:2,b:4,a_lane:2.0;label=P"
+         "code":"town=revenue:10;path=a:2,b:_0,a_lane:2.1;path=a:5,b:_0;path=a:2,b:4,a_lane:2.0;label=P;border=edge:2"
       },
       "619":2
    },
@@ -253,7 +253,7 @@ module Engine
          "name":"Kansas City, Mexico, & Orient Railroad",
          "value":40,
          "revenue":10,
-         "desc":"Owning corporation may place the non-upgradable Copper Canyon tile in F5 for $60 (instead of the normal $120) unless that hex is already built. The tile lay does not have to be connected to an existing station token of the owning corporation. The lay does not count toward the normal lay limit but must be done during tile lay.",
+         "desc":"Owning corporation may place the non-upgradable Copper Canyon tile in F5 for $60 (instead of the normal $120) unless that hex is already built. The tile lay does not have to be connected to an existing station token of the owning corporation. The lay does not count toward the normal lay limit but must be done during tile lay. Using this tile laying ability closes the private company.",
          "abilities": [
             {
               "type": "tile_lay",
@@ -266,7 +266,7 @@ module Engine
                 "F5"
               ],
               "count": 1,
-              "when": "track"
+              "when": ["special_track", "track", "other_or"]
             }
         ]
       },
@@ -342,9 +342,9 @@ module Engine
                "shares":"NdM_0"
             },
             {
-               "type":"close",
-               "when":"train",
-               "corporation":"NdM"
+               "type": "close",
+               "when": "bought_train",
+               "corporation": "NdM"
             },
             {
                "type":"no_buy"
@@ -361,7 +361,7 @@ module Engine
             0
          ],
          "coordinates":"M12",
-         "color":"green"
+         "color":"limeGreen"
       },
       {
          "sym":"B",
@@ -371,7 +371,7 @@ module Engine
             0
          ],
          "coordinates":"K6",
-         "color":"green"
+         "color":"darkGreen"
       },
       {
          "sym":"C",
@@ -381,7 +381,7 @@ module Engine
             0
          ],
          "coordinates":"S12",
-         "color":"purple"
+         "color":"darkMagenta"
       }
    ],
    "corporations":[
@@ -397,7 +397,7 @@ module Engine
             80
          ],
          "coordinates":"E6",
-         "color":"red"
+         "color":"#FF4136"
       },
       {
          "float_percent":50,
@@ -428,7 +428,7 @@ module Engine
             }
          ],
          "coordinates":"O10",
-         "color":"green"
+         "color":"#00AC00"
       },
       {
          "float_percent":50,
@@ -440,13 +440,13 @@ module Engine
             40
          ],
          "coordinates":"I8",
-         "color":"black"
+         "color":"#232b2b"
       },
       {
          "float_percent":50,
-         "sym":"PAC",
+         "sym":"FCP",
          "name":"Pacific Railroad",
-         "logo":"18_mex/PAC",
+         "logo":"18_mex/FCP",
          "tokens":[
             0,
             40,
@@ -460,7 +460,7 @@ module Engine
             }
          ],
          "coordinates":"B3",
-         "color":"yellow",
+         "color":"#FFF128",
          "text_color":"black"
       },
       {
@@ -479,7 +479,8 @@ module Engine
             }
          ],
          "coordinates":"I12",
-         "color":"orange"
+         "color":"#FFC502",
+         "text_color":"black"
       },
       {
          "float_percent":50,
@@ -492,7 +493,7 @@ module Engine
             60
          ],
          "coordinates":"P13",
-         "color":"gray",
+         "color":"darkGray",
          "text_color":"black"
       },
       {
@@ -506,7 +507,7 @@ module Engine
             60
          ],
          "coordinates":"O8",
-         "color":"blue"
+         "color":"#0080FF"
       },
       {
          "float_percent":50,
@@ -518,7 +519,7 @@ module Engine
             40
          ],
          "coordinates":"Q14",
-         "color":"purple"
+         "color":"darkMagenta"
       }
    ],
    "trains":[
@@ -854,10 +855,10 @@ module Engine
          "city=revenue:20;path=a:0,b:_0;path=a:1,b:_0;path=a:3,b:_0":[
             "E6"
          ],
-         "city=revenue:20,loc:center;town=revenue:0,loc:2;path=a:3,b:_0;path=a:5,b:_0;border=edge:4,type:impassable;label=MC":[
+         "city=revenue:20,loc:center;town=revenue:0,loc:2;path=a:3,b:_0;path=a:5,b:_0;border=edge:4,type:impassable;label=MC;border=edge:5":[
             "O10"
          ],
-         "town=revenue:10;path=a:2,b:_0;path=a:_0,b:5;upgrade=cost:60,terrain:mountain;border=edge:0,type:impassable;border=edge:1,type:impassable;border=edge:3,type:impassable;label=P":[
+         "town=revenue:10;path=a:2,b:_0;path=a:_0,b:5;upgrade=cost:60,terrain:mountain;border=edge:0,type:impassable;border=edge:1,type:impassable;border=edge:3,type:impassable;label=P;border=edge:2":[
             "P11"
          ],
          "path=a:1,b:4;upgrade=cost:60,terrain:mountain":[

@@ -13,6 +13,10 @@ module Engine
         @game.players.reject(&:bankrupt)
       end
 
+      def self.short_name
+        'SR'
+      end
+
       def name
         'Stock Round'
       end
@@ -52,13 +56,17 @@ module Engine
         @game.finished || @entities.all?(&:passed?)
       end
 
+      def stock?
+        true
+      end
+
       private
 
       def finish_round
         @game.corporations.select(&:floated?).sort.each do |corp|
           prev = corp.share_price.price
 
-          @game.stock_market.move_up(corp) if sold_out?(corp)
+          sold_out_stock_movement(corp) if sold_out?(corp) && @game.class::SOLD_OUT_INCREASE
           pool_share_drop = @game.class::POOL_SHARE_DROP
           price_drops =
             if (pool_share_drop == :none) || (shares_in_pool = corp.num_market_shares).zero?
@@ -72,6 +80,10 @@ module Engine
 
           @game.log_share_price(corp, prev)
         end
+      end
+
+      def sold_out_stock_movement(corp)
+        @game.stock_market.move_up(corp)
       end
 
       def sold_out?(corporation)

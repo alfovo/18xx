@@ -8,7 +8,8 @@ module View
       include Actionable
 
       def render
-        choice_buttons = @game.round.active_step.choices.map do |choice|
+        choice_buttons = @game.round.active_step.choices.map do |choice, label|
+          label ||= choice
           click = lambda do
             process_action(Engine::Action::Choose.new(
               @game.current_entity,
@@ -18,17 +19,16 @@ module View
 
           props = {
             style: {
-              width: 'calc(17.5rem/6)',
-              padding: '0.2rem 0',
+              padding: '0.2rem 0.2rem',
             },
             on: { click: click },
           }
-          h('button.small', props, choice)
+          h('button', props, label)
         end
 
         div_class = choice_buttons.size < 5 ? '.inline' : ''
         h(:div, [
-          h("div#{div_class}", { style: { marginTop: '0.5rem' } }, "#{@game.round.active_step.choice_name}:"),
+          h("div#{div_class}", { style: { marginTop: '0.5rem' } }, "#{@game.round.active_step.choice_name}: "),
           *choice_buttons,
         ])
       end

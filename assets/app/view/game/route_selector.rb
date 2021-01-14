@@ -3,7 +3,6 @@
 require 'lib/color'
 require 'lib/settings'
 require 'view/game/actionable'
-require 'view/game/undo_and_pass'
 
 module View
   module Game
@@ -12,8 +11,13 @@ module View
       include Lib::Color
       include Lib::Settings
 
+      needs :last_entity, store: true, default: nil
+      needs :last_round, store: true, default: nil
+      needs :last_company, store: true, default: nil
       needs :routes, store: true, default: []
       needs :selected_route, store: true, default: nil
+      needs :selected_company, default: nil, store: true
+      needs :abilities, store: true, default: nil
 
       # Get routes that have a length greater than zero
       # Due to the way this and the map hook up routes needs to have
@@ -23,24 +27,59 @@ module View
       end
 
       def generate_last_routes!
-        trains = @game.round.current_entity.runnable_trains
+        trains = @game.route_trains(@game.round.current_entity)
         operating = @game.round.current_entity.operating_history
         last_run = operating[operating.keys.max]&.routes
         return [] unless last_run
+        return [] if @abilities&.any?
 
+        halts = operating[operating.keys.max]&.halts
         last_run.map do |train, connections|
           next unless trains.include?(train)
 
-          connections = connections&.map do |ids|
-            ids.map { |id| @game.hex_by_id(id) }
-          end
           # A future enhancement to this could be to find trains and move the routes over
-          @routes << Engine::Route.new(@game, @game.phase, train, connection_hexes: connections, routes: @routes)
+          @routes << Engine::Route.new(
+            @game,
+            @game.phase,
+            train,
+            connection_hexes: connections,
+            routes: @routes,
+            halts: halts[train],
+          )
         end.compact
       end
 
       def render
-        trains = @game.round.current_entity.runnable_trains
+        current_entity = @game.round.current_entity
+        if @selected_company&.owner == current_entity
+          ability = @game.abilities(@selected_company, :hex_bonus, time: 'route')
+          # Clean routes if we select company, but just when we select
+          unless @last_company
+            cleanup
+            store(:last_company, @selected_company, skip: true)
+          end
+          store(:abilities, ability ? [ability.type] : nil, skip: true)
+        else
+          cleanup if @last_company
+          store(:last_company, nil, skip: true)
+          store(:abilities, nil, skip: true)
+        end
+
+        # this is needed for the rare case when moving directly between run_routes steps
+        if @last_entity != current_entity || @last_round != @game.round
+          cleanup
+          store(:last_entity, current_entity, skip: true)
+          store(:last_round, @game.round, skip: true)
+        end
+
+        trains = @game.route_trains(current_entity)
+
+        train_help =
+          if (helps = @game.train_help(trains)).any?
+            h('ul',
+              { style: { 'padding-left': '20px' } },
+              helps.map { |help| h('li', [h('p.small_font', help)]) })
+          end
 
         if @routes.empty? && generate_last_routes!.any?
           description = 'Prior routes are autofilled.'
@@ -50,16 +89,17 @@ module View
         end
 
         if !@selected_route && (first_train = trains[0])
-          route = Engine::Route.new(@game, @game.phase, first_train, routes: @routes)
+          route = Engine::Route.new(@game, @game.phase, first_train, abilities: @abilities, routes: @routes)
           @routes << route
           store(:routes, @routes, skip: true)
           store(:selected_route, route, skip: true)
         end
 
+        render_halts = false
         trains = trains.flat_map do |train|
           onclick = lambda do
             unless (route = @routes.find { |t| t.train == train })
-              route = Engine::Route.new(@game, @game.phase, train, routes: @routes)
+              route = Engine::Route.new(@game, @game.phase, train, abilities: @abilities, routes: @routes)
               @routes << route
               store(:routes, @routes)
             end
@@ -95,8 +135,14 @@ module View
             td_props = { style: { paddingRight: '0.8rem' } }
 
             children << h('td.right', td_props, route.distance)
-            children << h('td.right', td_props, revenue)
-            children << h(:td, route.hexes.map(&:name).join(' '))
+            if route.halts
+              render_halts = true
+              children << h('td.right', td_props, halt_actions(route, revenue,
+                                                               @game.format_currency(route.subsidy)))
+            else
+              children << h('td.right', td_props, revenue)
+            end
+            children << h(:td, route.revenue_str)
           elsif !selected
             style[:border] = '1px solid'
             style[:padding] = '5px 8px'
@@ -134,10 +180,14 @@ module View
           },
         }
 
+        instructions = 'Click revenue centers, again to cycle paths.'
+        instructions += ' Click button under Revenue to pick number of halts.' if render_halts
+
         h(:div, div_props, [
           h(:h3, { style: { margin: '0.5rem 0 0.2rem' } }, 'Select Routes'),
           h('div.small_font', description),
-          h('div.small_font', 'Click revenue centers, again to cycle paths.'),
+          h('div.small_font', instructions),
+          train_help,
           h(:table, table_props, [
             h(:thead, [
               h(:tr, [
@@ -149,8 +199,22 @@ module View
             ]),
             h(:tbody, trains),
           ]),
-          actions,
-        ])
+          actions(render_halts),
+        ].compact)
+      end
+
+      def halt_actions(route, revenue, subsidy)
+        change_halts = lambda do
+          route.cycle_halts
+          store(:selected_route, route)
+        end
+
+        [
+          revenue,
+          h(:div, [
+            h('button.small', { style: { margin: '0px', padding: '0.2rem' }, on: { click: change_halts } }, subsidy),
+          ]),
+        ]
       end
 
       def cleanup
@@ -158,7 +222,7 @@ module View
         store(:routes, [], skip: true)
       end
 
-      def actions
+      def actions(render_halts)
         submit = lambda do
           process_action(Engine::Action::RunRoutes.new(@game.current_entity, routes: active_routes))
           cleanup
@@ -192,13 +256,15 @@ module View
                   rescue Engine::GameError
                     '(Invalid Route)'
                   end
+
+        subsidy = render_halts ? ' + ' + @game.format_currency(@game.routes_subsidy(active_routes)) : ''
         h(:div, { style: { overflow: 'auto', marginBottom: '1rem' } }, [
           h(:div, [
             h('button.small', { on: { click: clear } }, 'Clear Train'),
             h('button.small', { on: { click: clear_all } }, 'Clear All'),
             h('button.small', { on: { click: reset_all } }, 'Reset'),
           ]),
-          h(:button, { style: submit_style, on: { click: submit } }, 'Submit ' + revenue),
+          h(:button, { style: submit_style, on: { click: submit } }, 'Submit ' + revenue + subsidy),
         ])
       end
     end

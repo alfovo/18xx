@@ -4,6 +4,7 @@ require_relative 'action/buy_train'
 
 module Engine
   class Phase
+    attr_accessor :next_on
     attr_reader :name, :operating_rounds, :tiles, :phases, :status, :corporation_sizes
 
     def initialize(phases, game)
@@ -16,7 +17,7 @@ module Engine
     end
 
     def buying_train!(entity, train)
-      next! if train.sym == @next_on
+      next! while @next_on.include?(train.sym)
 
       train.events.each do |event|
         @game.send("event_#{event['type']}!")
@@ -25,14 +26,28 @@ module Engine
 
       rust_trains!(train, entity)
       close_companies_on_train!(entity)
+      @depot.depot_trains(clear: true)
     end
 
     def current
       @phases[@index]
     end
 
+    def upcoming
+      @phases[@index + 1]
+    end
+
     def train_limit(entity)
-      @train_limit + train_limit_increase(entity)
+      limit = train_limit_constant(entity)
+      return limit if limit.positive?
+
+      limit =
+        if @train_limit.is_a?(Hash)
+          @train_limit[entity.type] || 0
+        else
+          @train_limit
+        end
+      limit + train_limit_increase(entity)
     end
 
     def available?(phase_name)
@@ -51,7 +66,7 @@ module Engine
       @events = phase[:events] || []
       @status = phase[:status] || []
       @corporation_sizes = phase[:corporation_sizes]
-      @next_on = @phases[@index + 1]&.dig(:on)
+      @next_on = Array(@phases[@index + 1]&.dig(:on))
 
       @log << "-- Phase #{@name} " \
         "(Operating Rounds: #{@operating_rounds}, Train Limit: #{@train_limit}, "\
@@ -64,11 +79,11 @@ module Engine
       @game.companies.each do |company|
         next unless company.owner
 
-        company.abilities(:revenue_change, @name) do |ability|
+        @game.abilities(company, :revenue_change, on_phase: @name) do |ability|
           company.revenue = ability.revenue
         end
 
-        company.abilities(:close, @name) do
+        @game.abilities(company, :close, on_phase: @name) do
           @log << "Company #{company.name} closes"
           company.close!
         end
@@ -81,7 +96,7 @@ module Engine
       @game.companies.each do |company|
         next if company.closed?
 
-        company.abilities(:close, :train) do |ability|
+        @game.abilities(company, :close, time: 'bought_train') do |ability|
           next if entity&.name != ability.corporation
 
           company.close!
@@ -107,11 +122,12 @@ module Engine
 
         should_rust = t.rusts_on == train.sym || (t.obsolete_on == train.sym && @depot.discarded.include?(t))
         next unless should_rust
+        next unless @game.rust?(t)
 
         rusted_trains << t.name
         owners[t.owner.name] += 1
         entity.rusted_self = true if entity && entity == t.owner
-        t.rust!
+        @game.rust(t)
       end
 
       @log << "-- Event: #{obsolete_trains.uniq.join(', ')} trains are obsolete --" if obsolete_trains.any?
@@ -127,7 +143,11 @@ module Engine
     private
 
     def train_limit_increase(entity)
-      entity.abilities(:train_limit) { |ability| return ability.increase }
+      Array(@game.abilities(entity, :train_limit)).sum(&:increase)
+    end
+
+    def train_limit_constant(entity)
+      @game.abilities(entity, :train_limit) { |ability| return ability.constant if ability.constant }
       0
     end
   end

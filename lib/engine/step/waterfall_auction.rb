@@ -108,6 +108,7 @@ module Engine
 
       def resolve_bids_for_company(company)
         resolved = false
+        is_new_auction = company != @auctioning
         @auctioning = nil
         bids = @bids[company]
 
@@ -116,7 +117,7 @@ module Engine
           resolved = true
         elsif can_auction?(company)
           @auctioning = company
-          @log << "#{@auctioning.name} goes up for auction"
+          @log << "#{@auctioning.name} goes up for auction" if is_new_auction
         end
 
         resolved
@@ -166,6 +167,12 @@ module Engine
       end
 
       def buy_company(player, company, price)
+        if (available = max_bid(player, company)) < price
+          raise GameError, "#{player.name} has #{@game.format_currency(available)} "\
+                           'available and cannot spend '\
+                           "#{@game.format_currency(price)}"
+        end
+
         company.owner = player
         player.companies << company
         player.spend(price, @game.bank) if price.positive?
@@ -182,7 +189,7 @@ module Engine
             "with a bid of #{@game.format_currency(price)}"
         end
 
-        company.abilities(:shares) do |ability|
+        @game.abilities(company, :shares) do |ability|
           ability.shares.each do |share|
             if share.president
               @round.companies_pending_par << company
@@ -199,8 +206,8 @@ module Engine
         price = bid.price
         company = bid.company
         player = bid.entity
-        buy_company(player, company, price)
         @bids.delete(company)
+        buy_company(player, company, price)
       end
 
       def add_bid(bid)

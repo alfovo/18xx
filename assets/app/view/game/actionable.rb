@@ -10,10 +10,15 @@ module View
         base.needs :game_data, default: {}, store: true
         base.needs :game, store: true
         base.needs :flash_opts, default: {}, store: true
+        base.needs :confirm_opts, default: {}, store: true
         base.needs :connection, store: true, default: nil
         base.needs :user, store: true, default: nil
         base.needs :tile_selector, default: nil, store: true
         base.needs :selected_company, default: nil, store: true
+        base.needs :selected_corporation, default: nil, store: true
+        base.needs :app_route, default: nil, store: true
+        base.needs :round_history, default: nil, store: true
+        base.needs :selected_action_id, default: nil, store: true
       end
 
       def save_user_settings(settings)
@@ -23,32 +28,55 @@ module View
         @game_data['user_settings'].merge!(settings)
       end
 
+      def participant?
+        return @participant if defined?(@participant)
+
+        @participant = (@game.players.map(&:id) + [@game_data['user']['id']]).include?(@user&.dig('id'))
+      end
+
+      def check_consent(player, click)
+        opts = {
+          color: :yellow,
+          click: click,
+          message: "This action requires consent from #{player.name}!",
+        }
+        store(:confirm_opts, opts, skip: false)
+      end
+
       def process_action(action)
         hotseat = @game_data[:mode] == :hotseat
-        participant = @game.players.map(&:name).include?(@user&.dig('name'))
+
+        if @game.exception
+          msg = 'This game is broken and cannot accept any new actions. If '\
+                'this issue has not already been reported, please follow the '\
+                'instructions at the top of the page to report it.'
+          return store(:flash_opts, msg)
+        end
 
         if Lib::Params['action']
-          return store(:flash_opts, 'You cannot make changes in history mode. Press >| to go current')
+          return store(:flash_opts, 'You cannot make changes while browsing history.
+            Press >| to navigate to the current game action.')
         end
 
         if !hotseat &&
           !action.free? &&
-          participant &&
-          !@game.active_players.map(&:name).include?(@user['name'])
+          participant? &&
+          !@game.active_players_id.include?(@user['id'])
 
           unless Lib::Storage[@game.id]&.dig('master_mode')
-            return store(:flash_opts, 'Not your turn. Turn on master mode in the tools tab to act for others.')
+            return store(:flash_opts, 'Not your turn. Turn on master mode under the Tools menu to act for others.')
           end
 
-          action.user = @user['name']
+          action.user = @user['id']
         end
 
-        game = @game.process_action(action)
+        game = @game.process_action(action).maybe_raise!
+
         @game_data[:actions] << action.to_h
         store(:game_data, @game_data, skip: true)
 
-        if @game.finished
-          @game_data[:result] = @game.result
+        if game.finished
+          @game_data[:result] = game.result
           @game_data[:status] = 'finished'
         else
           @game_data[:result] = {}
@@ -56,20 +84,30 @@ module View
         end
 
         if hotseat
+          @game_data[:turn] = game.turn
+          @game_data[:round] = game.round.name
+          @game_data[:acting] = game.active_players_id
+          @game_data[:updated_at] = Time.now.to_i
           Lib::Storage[@game_data[:id]] = @game_data
-        elsif participant
+        elsif participant?
           json = action.to_h
           if @game_data&.dig('settings', 'pin')
             meta = {
               'game_result': @game_data[:result],
               'game_status': @game_data[:status],
-              'active_players': game.active_players.map(&:name),
+              'active_players': game.active_players_id,
               'turn': game.turn,
               'round': game.round.name,
             }
             json['meta'] = meta
           end
-          @connection.safe_post("/game/#{@game_data['id']}/action", json)
+          game_path = "/game/#{@game_data['id']}"
+          @connection.post("#{game_path}/action", json) do |data|
+            if (error = data['error'])
+              store(:flash_opts, "The server did not accept this action due to: #{error}... refreshing.")
+              `setTimeout(function() { location.reload() }, 5000)`
+            end
+          end
         else
           store(
             :flash_opts,
@@ -81,14 +119,41 @@ module View
         clear_ui_state
         store(:game, game)
       rescue StandardError => e
-        store(:game, @game.clone(@game.actions), skip: true)
+        clear_ui_state
         store(:flash_opts, e.message)
-        e.backtrace.each { |line| puts line }
+        `setTimeout(function() { self['$store']('game', Opal.nil) }, 10)`
       end
 
       def clear_ui_state
         store(:selected_company, nil, skip: true)
+        store(:selected_corporation, nil, skip: true)
         store(:tile_selector, nil, skip: true)
+        store(:selected_action_id, nil, skip: true)
+      end
+
+      def history_link(text, title, action_id = nil, style_extra = {}, as_button = false)
+        route = Lib::Params.add(@app_route, 'action', action_id)
+
+        click = lambda do
+          store(:round_history, @game.round_history, skip: true) unless @round_history
+          store(:round_history, nil, skip: true) unless action_id
+          store(:app_route, route)
+          clear_ui_state
+        end
+
+        props = {
+          href: route,
+          click: click,
+          title: title,
+          children: text,
+          style: {
+            textDecoration: 'none',
+            **style_extra,
+          },
+        }
+        props['class'] = '.button_link' if as_button
+
+        h(Link, props)
       end
     end
   end

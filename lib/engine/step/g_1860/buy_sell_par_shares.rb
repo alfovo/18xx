@@ -43,6 +43,10 @@ module Engine
           []
         end
 
+        def purchasable_unsold_companies
+          []
+        end
+
         def can_buy_company?(player, company)
           !did_sell?(company, player)
         end
@@ -59,19 +63,20 @@ module Engine
           @game.par_prices(corp)
         end
 
-        def sell_shares(entity, shares)
-          @game.game_error("Cannot sell shares of #{shares.corporation.name}") unless can_sell?(entity, shares)
-
-          @players_sold[shares.owner][shares.corporation] = :now
-          @game.sell_shares_and_change_price(shares)
-        end
-
         def process_buy_shares(action)
+          corporation = action.bundle.corporation
+          floated = corporation.floated?
+
           super
 
-          corporation = action.bundle.corporation
-          place_home_track(corporation) if corporation.floated?
+          place_home_track(corporation) if corporation.floated? && !floated && !@game.sr_after_southern
           @game.check_new_layer
+        end
+
+        def process_sell_shares(action)
+          super
+
+          @game.check_bank_broken!
         end
 
         def process_buy_company(action)
@@ -80,7 +85,7 @@ module Engine
           price = action.price
           owner = company.owner
 
-          @game.game_error("Cannot buy #{company.name} from #{owner.name}") unless owner == @game.bank
+          raise GameError, "Cannot buy #{company.name} from #{owner.name}" unless owner == @game.bank
 
           company.owner = player
 
@@ -92,19 +97,63 @@ module Engine
           @game.close_other_companies!(company) if company.sym == 'FFC'
         end
 
+        # Returns if a share can be bought via a normal buy actions
+        # If a player has sold shares they cannot buy in many 18xx games
+        def can_buy?(entity, bundle)
+          return unless bundle&.buyable
+
+          corporation = bundle.corporation
+          entity.cash >= bundle.price && can_gain?(entity, bundle) &&
+            !@round.players_sold[entity][corporation] &&
+            (can_buy_multiple?(entity, corporation) || !bought?) &&
+            can_buy_presidents_share?(entity, bundle, corporation)
+        end
+
+        # can only buy president's share if player already has at least one share
+        def can_buy_presidents_share?(entity, share, corporation)
+          return true if share.percent != corporation.presidents_percent ||
+                         share.owner != @game.share_pool
+
+          difference = share.percent - corporation.share_percent
+          num_shares_needed = difference / corporation.share_percent
+          existing_shares = entity.percent_of(corporation) || 0
+          existing_shares > num_shares_needed
+        end
+
+        def can_sell?(entity, bundle)
+          return unless bundle
+
+          can_sell_order? &&
+            @game.share_pool.fit_in_bank?(bundle) &&
+            can_dump?(entity, bundle)
+        end
+
+        # can't sell partial president's share to pool if pool is empty
+        def can_dump?(entity, bundle)
+          corp = bundle.corporation
+          return true if !bundle.presidents_share || bundle.percent >= corp.presidents_percent
+
+          max_shares = corp.player_share_holders.reject { |p, _| p == entity }.values.max || 0
+          return true if max_shares > 10
+
+          pool_shares = @game.share_pool.percent_of(corp) || 0
+          pool_shares.positive?
+        end
+
         def process_sell_company(action)
           company = action.company
           player = action.entity
-          @game.game_error("Cannot sell #{company.id}") unless can_sell_company?(company)
+          raise GameError, "Cannot sell #{company.id}" unless can_sell_company?(company)
 
           sell_company(player, company, action.price)
           @round.last_to_act = player
+          @game.check_bank_broken!
         end
 
         def sell_price(entity)
           return 0 unless can_sell_company?(entity)
 
-          entity.value - 30
+          entity.value - @game.class::COMPANY_SALE_FEE
         end
 
         def can_sell_any_companies?(entity)
@@ -131,7 +180,7 @@ module Engine
           player.companies.delete(company)
           @game.bank.spend(price, player) if price.positive?
           @log << "#{player.name} sells #{company.name} to bank for #{@game.format_currency(price)}"
-          @players_sold[player][company] = :now
+          @round.players_sold[player][company] = :now
         end
 
         def place_home_track(corporation)
@@ -141,7 +190,7 @@ module Engine
           # skip if a tile is already in home location
           return unless tile.color == :white
 
-          @log << "#{corporation.name} must choose tile for home location"
+          @log << "#{corporation.name} (#{corporation.owner.name}) must choose tile for home location"
 
           @round.pending_tracks << {
             entity: corporation,

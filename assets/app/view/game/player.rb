@@ -100,7 +100,7 @@ module View
         trs.concat([
           h(:tr, [
             h(:td, 'Value'),
-            h('td.right', @game.format_currency(@player.value)),
+            h('td.right', @game.format_currency(@game.player_value(@player))),
           ]),
           h(:tr, [
             h(:td, 'Liquidity'),
@@ -116,7 +116,7 @@ module View
         end
         trs << h(:tr, [
           h(:td, 'Certs'),
-          h('td.right', td_cert_props, "#{num_certs}/#{cert_limit}"),
+          h('td.right', td_cert_props, @game.show_game_cert_limit? ? "#{num_certs}/#{cert_limit}" : num_certs.to_s),
         ])
 
         priority_props = {

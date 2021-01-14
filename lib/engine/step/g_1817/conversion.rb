@@ -2,7 +2,7 @@
 
 require_relative '../base'
 require_relative '../../token'
-require_relative 'token_merger'
+require_relative '../token_merger'
 
 module Engine
   module Step
@@ -18,6 +18,10 @@ module Engine
           actions << 'merge' if mergeable(entity).any?
           actions << 'pass' if actions.any?
           actions
+        end
+
+        def merge_name
+          'Merge'
         end
 
         def description
@@ -62,7 +66,7 @@ module Engine
           target = action.corporation
 
           if !target || !mergeable(corporation).include?(target)
-            @game.game_error("Choose a corporation to merge with #{corporation.name}")
+            raise GameError, "Choose a corporation to merge with #{corporation.name}"
           end
 
           receiving = []
@@ -72,18 +76,18 @@ module Engine
             target.spend(target.cash, corporation)
           end
 
-          companies = target.transfer(:companies, corporation).map(&:name)
+          companies = @game.transfer(:companies, target, corporation).map(&:name)
           receiving << "companies (#{companies.join(', ')})" if companies.any?
 
-          loans = target.transfer(:loans, corporation).size
+          loans = @game.transfer(:loans, target, corporation).size
           receiving << "loans (#{loans})" if loans.positive?
 
-          trains = target.transfer(:trains, corporation).map(&:name)
+          trains = @game.transfer(:trains, target, corporation).map(&:name)
           receiving << "trains (#{trains})" if trains.any?
 
           remove_duplicate_tokens(corporation, target)
           if tokens_above_limits?(corporation, target)
-            @game.log << "#{corporation.name} will be above token limit and must decide which tokens to keep"
+            @game.log << "#{corporation.name} will be above token limit and must decide which tokens to remove"
             @round.corporations_removing_tokens = [corporation, target]
           else
             tokens = move_tokens_to_surviving(corporation, target)
@@ -150,7 +154,7 @@ module Engine
               target.total_shares != 10 &&
               target.total_shares == corporation.total_shares &&
             # on 5 share merges ensure one player will have at least enough shares to take the presidency
-            (target.total_shares != 5 || merged_max_share_holder(corporation, target) > 40) &&
+            (target.total_shares != 5 || merged_max_share_holder(corporation, target) >= 40) &&
             owner_can_afford_extra_share(corporation, target)
           end
         end

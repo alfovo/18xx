@@ -19,9 +19,9 @@ module Engine
         name: 'Grand Trunk Games',
         url: 'https://www.grandtrunkgames.com/',
       },
-      mayfair_games: {
-        name: 'Mayfair Games',
-        url: '',
+      oo_games: {
+        name: 'Double-O Games',
+        url: 'http://ohley.de/english/',
       },
       sea_horse: {
         name: 'Sea Horse Laser & Design',
@@ -34,6 +34,14 @@ module Engine
       zman_games: {
         name: 'Z-MAN Games',
         url: 'https://zmangames.com/',
+      },
+      lonny_games: {
+        name: 'Lonny Games',
+        url: 'https://www.lonny.at/',
+      },
+      self_published: {
+        name: 'Self-published',
+        url: 'https://www.google.com/',
       },
     }.freeze
   end

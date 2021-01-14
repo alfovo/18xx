@@ -22,7 +22,6 @@ module Engine
         Round::Operating.new(self, [
           Step::Bankrupt,
           Step::Exchange,
-          Step::DiscardTrain,
           Step::SpecialTrack,
           Step::BuyCompany,
           Step::HomeToken,
@@ -30,6 +29,7 @@ module Engine
           Step::Token,
           Step::Route,
           Step::Dividend,
+          Step::DiscardTrain,
           Step::G1836Jr30::BuyTrain,
           [Step::BuyCompany, blocks: true],
         ], round_num: round_num)
@@ -41,7 +41,7 @@ module Engine
         port = stops.find { |stop| stop.groups.include?('port') }
 
         if port
-          game_error("#{port.tile.location_name} must contain 2 other stops") if stops.size < 3
+          raise GameError, "#{port.tile.location_name} must contain 2 other stops" if stops.size < 3
 
           per_token = port.route_revenue(route.phase, route.train)
           revenue -= per_token # It's already been counted, so remove

@@ -7,10 +7,12 @@ require_relative 'company_price_50_to_150_percent'
 module Engine
   module Game
     class G18Mex < Base
+      attr_reader :merged_major
+
       load_from_json(Config::Game::G18Mex::JSON)
       AXES = { x: :number, y: :letter }.freeze
 
-      DEV_STAGE = :alpha
+      DEV_STAGE = :production
 
       GAME_LOCATION = 'Mexico'
       GAME_RULES_URL = 'https://secure.deepthoughtgames.com/games/18MEX/rules.pdf'
@@ -19,7 +21,10 @@ module Engine
       GAME_INFO_URL = 'https://github.com/tobymao/18xx/wiki/18MEX'
       GAME_END_CHECK = { bankrupt: :immediate, stock_market: :current_or, bank: :current_or }.freeze
 
-      IPO_RESERVED_NAME = 'Trade-in'
+      # Sell of one 5% NdM share wont affect stock price.
+      # Actually neither should sell of 2 5% but they will
+      # always be sold just one at a time.
+      SELL_MOVEMENT = :down_per_10
 
       TRACK_RESTRICTION = :city_permissive
 
@@ -91,8 +96,8 @@ module Engine
         @ndm_merge_share ||= ndm.shares.last
       end
 
-      def pac
-        @pac_corporation ||= corporation_by_id('PAC')
+      def fcp
+        @fcp_corporation ||= corporation_by_id('FCP')
       end
 
       def tm
@@ -136,13 +141,13 @@ module Engine
         @minors.each do |minor|
           train = @depot.upcoming[0]
           train.buyable = false
-          update_end_of_life(train, nil, nil) if @optional_rules&.include?(:delay_minor_close)
-          minor.cash = 100
-          minor.buy_train(train)
+          buy_train(minor, train, :free)
           hex = hex_by_id(minor.coordinates)
           hex.tile.cities[0].place_token(minor, minor.next_token)
-          minor.float!
         end
+
+        # Needed for special handling of minors in case inital auction not completed
+        @stock_round_initiated = false
 
         @brown_g_tile ||= @tiles.find { |t| t.name == '480' }
         @gray_tile ||= @tiles.find { |t| t.name == '455' }
@@ -184,7 +189,6 @@ module Engine
         Round::Operating.new(self, [
           Step::Bankrupt,
           Step::G18Mex::Assign,
-          Step::DiscardTrain,
           Step::G18Mex::BuyCompany,
           Step::HomeToken,
           Step::G18Mex::Merge,
@@ -193,6 +197,7 @@ module Engine
           Step::Token,
           Step::Route,
           Step::G18Mex::Dividend,
+          Step::DiscardTrain,
           Step::G18Mex::SingleDepotTrainBuy,
           [Step::BuyCompany, blocks: true],
         ], round_num: round_num)
@@ -200,6 +205,13 @@ module Engine
 
       def or_round_finished
         @recently_floated = []
+      end
+
+      def new_auction_round
+        Round::Auction.new(self, [
+          Step::CompanyPendingPar,
+          Step::G18Mex::WaterfallAuction,
+        ])
       end
 
       def stock_round
@@ -210,14 +222,17 @@ module Engine
       end
 
       def new_stock_round
+        # Needed for special handling of minors in case inital auction not completed
+        @stock_round_initiated = true
+
         # Trigger possible delayed close of minors
         event_minors_closed! if @minor_close
 
-        @minors.each do |minor|
-          matching_company = @companies.find { |company| company.sym == minor.name }
-          minor.owner = matching_company.owner
-        end if @turn == 1
         super
+      end
+
+      def ipo_reserved_name(_entity = nil)
+        'Trade-in'
       end
 
       def float_corporation(corporation)
@@ -226,16 +241,10 @@ module Engine
         super
       end
 
-      # If selling 5% NdM share it should not affect share price
-      def sell_shares_and_change_price(bundle)
-        return super if bundle.corporation != ndm || bundle.percent > 5
-
-        @share_pool.sell_shares(bundle)
-      end
-
-      # 5% NdM is not counted for cert limit
-      def countable_shares(shares)
-        shares.select { |s| s.percent > 5 }
+      def num_certs(entity)
+        entity.companies.size + entity.shares.count do |s|
+          s.corporation.counts_for_limit && s.counts_for_limit && (s.corporation != ndm || s.percent > 5)
+        end
       end
 
       # In case of selling NdM, split 5% share in separate bundle and regular
@@ -259,6 +268,38 @@ module Engine
         regular_bundles.concat(half_bundles)
       end
 
+      def value_for_sellable(player, corporation)
+        max_bundle = all_bundles_for_corporation(player, corporation)
+          .select { |bundle| @round.active_step&.can_sell?(player, bundle) }
+          .max_by(&:price)
+        max_bundle&.price || 0
+      end
+
+      def value_for_dumpable(player, corporation)
+        max_bundle = all_bundles_for_corporation(player, corporation)
+          .select { |bundle| bundle.can_dump?(player) && @share_pool&.fit_in_bank?(bundle) }
+          .max_by(&:price)
+        max_bundle&.price || 0
+      end
+
+      def payout_companies
+        super
+
+        return if @stock_round_initiated
+
+        # This is when an initial auction has all passes but not all privates sold.
+        # Now any minors bought should run, but having an Operating Round would require
+        # a bigger redesign. Instead let us give an expected $30 revenue (50-50) for
+        # any floated/bought minors and be done with it...
+        default_revenue_minor = 15
+        revenue = format_currency(default_revenue_minor)
+        @minors.select(&:floated?).each do |minor|
+          @bank.spend(default_revenue_minor, minor.owner)
+          @bank.spend(default_revenue_minor, minor)
+          @log << "Minor #{minor.name} receives #{revenue}, as does its owner #{minor.owner.name}"
+        end
+      end
+
       def place_home_token(entity)
         super
         return if entity.minor?
@@ -276,7 +317,7 @@ module Engine
 
       def purchasable_companies(entity = nil)
         return super if @phase.current[:name] != '2' || !@optional_rules&.include?(:early_buy_of_kcmo)
-        return [] unless p2_company.owner.player?
+        return [] unless p2_company.owner&.player?
 
         [p2_company]
       end
@@ -287,6 +328,7 @@ module Engine
           @minor_close = true
           return
         end
+        @minor_close = false
         merge_and_close_minor(a_company, minor_a, ndm, minor_a_reserved_share)
         merge_and_close_minor(b_company, minor_b, ndm, minor_b_reserved_share)
         merge_and_close_minor(c_company, minor_c, udy, minor_c_reserved_share)
@@ -295,7 +337,7 @@ module Engine
 
       def event_ndm_merger!
         @log << "-- Event: #{ndm.name} merger --"
-        remove_ability(pac, :base)
+        remove_ability(fcp, :base)
         remove_ability(tm, :base)
         unless ndm.floated?
           @log << "No merge occur as #{ndm.name} has not floated!"
@@ -329,12 +371,13 @@ module Engine
           return
         end
 
+        @merged_major = major
         @log << "-- #{major.name} merges into #{ndm.name} --"
 
         # Rule 5e: Any other shares are sold off for half market price
-        refund = major.ipoed ? (major.share_price.price / 2.0).ceil : 0
+        refund = major.ipoed ? (major.share_price.price / 2.0) : 0
         @players.each do |p|
-          refund_count = 0
+          refund_amount = 0.0
           p.shares_of(major).dup.each do |s|
             next unless s
 
@@ -343,8 +386,8 @@ module Engine
               # Might trigger presidency change in NdM
               @share_pool.buy_shares(major.owner, ndm_merge_share, exchange: :free, exchange_price: 0)
             else
-              bank.spend(refund, p) if refund.positive?
-              refund_count += 1
+              # Refund 10% share (as it is never NdM)
+              refund_amount += refund
             end
             s.transfer(major)
           end
@@ -352,9 +395,11 @@ module Engine
           @share_pool.shares_of(major).dup.each do |s|
             s.transfer(major)
           end
-          if refund_count.positive?
-            @log << "#{p.name} receives #{format_currency(refund * refund_count)} in share compensation"
-          end
+          next unless refund_amount.positive?
+
+          refund_amount = refund_amount.ceil
+          @bank.spend(refund_amount, p)
+          @log << "#{p.name} receives #{format_currency(refund_amount)} in share compensation"
         end
 
         # Rule 5f: Handle tokens. NdM gets two exchange tokens. The first exchange token will be used
@@ -418,11 +463,18 @@ module Engine
           major.spend(major.cash, ndm)
         end
         if major.trains.any?
-          trains_transfered = major.transfer(:trains, ndm).map(&:name)
+          trains_transfered = transfer(:trains, major, ndm).map(&:name)
           @log << "#{ndm.name} receives the trains: #{trains_transfered}"
         end
 
         major.close!
+      end
+
+      def rust?(train)
+        return super unless @optional_rules&.include?(:delay_minor_close)
+
+        # Do not rust minor's 2 trains
+        !(train.name == '2' && train.owner.minor?)
       end
 
       def buy_first_5_train(player)
@@ -530,7 +582,7 @@ module Engine
           end
         end
 
-        minor.spend(minor.cash, major)
+        minor.spend(minor.cash, major) if minor.cash.positive?
         hexes.each do |hex|
           hex.tile.cities.each do |city|
             if city.tokened_by?(minor)
@@ -541,7 +593,7 @@ module Engine
 
         # Delete train so it wont appear in rust message
         train = minor.trains.first
-        minor.remove_train(train)
+        remove_train(train)
         trains.delete(train)
 
         minor.close!
@@ -551,7 +603,7 @@ module Engine
       def mergeable_corporations
         corporations = @corporations
           .reject { |c| c.player == ndm.player }
-          .reject { |c| %w[PAC TM].include? c.name }
+          .reject { |c| %w[FCP TM].include? c.name }
         floated_player_corps, other_corps = corporations.partition { |c| c.owned_by_player? && c.floated? }
 
         # Sort eligible corporations so that they are in player order
@@ -599,7 +651,7 @@ module Engine
       end
 
       def remove_ability(corporation, ability_name)
-        corporation.abilities(ability_name) do |ability|
+        abilities(corporation, ability_name) do |ability|
           corporation.remove_ability(ability)
         end
       end

@@ -216,7 +216,7 @@ module Engine
                   "8",
                   "9"
                ],
-               "when":"track"
+               "when": "track"
             }
          ]
       },
@@ -240,7 +240,7 @@ module Engine
                   "8",
                   "9"
                ],
-               "when":"track"
+               "when": "track"
             }
          ]
       },
@@ -264,7 +264,7 @@ module Engine
                   "6",
                   "57"
                ],
-               "when":"track"
+               "when": "track"
             }
          ]
       },
@@ -288,7 +288,7 @@ module Engine
                   "8",
                   "9"
                ],
-               "when":"track"
+               "when": "track"
             }
          ]
       },
@@ -582,6 +582,7 @@ module Engine
             "yellow"
          ],
          "status":[
+            "can_buy_companies_from_other_players",
             "can_buy_companies_operation_round_one",
             "limited_train_buy"
          ],
@@ -596,6 +597,7 @@ module Engine
             "green"
          ],
          "status":[
+            "can_buy_companies_from_other_players",
             "can_buy_companies",
             "limited_train_buy"
          ],
@@ -610,6 +612,7 @@ module Engine
             "green"
          ],
          "status":[
+            "can_buy_companies_from_other_players",
             "can_buy_companies",
             "limited_train_buy"
          ],
@@ -624,6 +627,7 @@ module Engine
             "green"
          ],
          "status":[
+            "can_buy_companies_from_other_players",
             "can_buy_companies"
          ],
          "operating_rounds": 2

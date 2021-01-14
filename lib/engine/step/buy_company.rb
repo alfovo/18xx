@@ -7,11 +7,16 @@ module Engine
     class BuyCompany < Base
       ACTIONS = %w[buy_company pass].freeze
       ACTIONS_NO_PASS = %w[buy_company].freeze
+      PASS = %w[pass].freeze
 
       def actions(entity)
         # 1846 and a few others minors can't buy companies
         return [] if entity.minor?
         return blocks? ? ACTIONS : ACTIONS_NO_PASS if can_buy_company?(entity)
+
+        if blocks? && entity.corporation? && @game.abilities(entity, time: 'owning_corp_or_turn', passive_ok: false)
+          return PASS
+        end
 
         []
       end
@@ -22,7 +27,7 @@ module Engine
         entity == current_entity &&
           @game.phase.status.include?('can_buy_companies') &&
           companies.any? &&
-          companies.map(&:min_price).min <= @game.buying_power(entity)
+          companies.map(&:min_price).min <= buying_power(entity)
       end
 
       def blocks?
@@ -42,20 +47,19 @@ module Engine
         company = action.company
         price = action.price
         owner = company.owner
-
-        @game.game_error("Cannot buy #{company.name} from #{owner.name}") if owner.is_a?(Corporation)
+        raise GameError, "Cannot buy #{company.name} from #{owner.name}" unless @game.company_sellable(company)
 
         min = company.min_price
         max = company.max_price
         unless price.between?(min, max)
-          @game.game_error("Price must be between #{@game.format_currency(min)} and #{@game.format_currency(max)}")
+          raise GameError, "Price must be between #{@game.format_currency(min)} and #{@game.format_currency(max)}"
         end
 
         log_later = []
         company.owner = entity
-        owner.companies.delete(company)
+        owner&.companies&.delete(company)
 
-        company.abilities(:assign_corporation) do |ability|
+        @game.abilities(company, :assign_corporation, time: 'sold') do |ability|
           Assignable.remove_from_all!(assignable_corporations, company.id) do |unassigned|
             log_later << "#{company.name} is unassigned from #{unassigned.name}" if unassigned.name != entity.name
           end
@@ -71,14 +75,21 @@ module Engine
             end
         end
 
+        @game.abilities(company, :revenue_change, time: 'sold') { |ability| company.revenue = ability.revenue }
+
         company.remove_ability_when(:sold)
 
         @round.just_sold_company = company
-        @round.company_seller = owner
+        @round.company_sellers[company] = owner
 
         entity.companies << company
-        entity.spend(price, owner)
-        @log << "#{entity.name} buys #{company.name} from #{owner.name} for #{@game.format_currency(price)}"
+        entity.spend(price, owner.nil? ? @game.bank : owner)
+
+        @game.company_bought(company, entity)
+
+        @log << "#{entity.name} buys #{company.name} from "\
+                "#{owner.nil? ? 'the market' : owner.name} for "\
+                "#{@game.format_currency(price)}"
         log_later.each { |l| @log << l }
       end
 
@@ -87,7 +98,7 @@ module Engine
       end
 
       def round_state
-        { just_sold_company: nil, company_seller: nil }
+        { just_sold_company: nil, company_sellers: {} }
       end
 
       def setup

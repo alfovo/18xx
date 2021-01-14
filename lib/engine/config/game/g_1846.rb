@@ -20,9 +20,21 @@ module Engine
     "5": 9000
   },
   "certLimit": {
-    "3": 14,
-    "4": 12,
-    "5": 11
+    "3": {
+      "5" : 14,
+      "4" : 11
+    },
+    "4": {
+      "6" : 12,
+      "5" : 10,
+      "4" : 8
+    },
+    "5": {
+      "7" : 11,
+      "6" : 10,
+      "5" : 8,
+      "4" : 6
+    }
   },
   "startingCash": {
     "2": 600,
@@ -177,6 +189,7 @@ module Engine
       "abilities": [
         {
           "type": "token",
+          "when": "owning_corp_or_turn",
           "owner_type":"corporation",
           "hexes": [
             "D6"
@@ -204,7 +217,7 @@ module Engine
       "abilities": [
         {
           "type": "close",
-          "when": "never",
+          "on_phase": "never",
           "owner_type": "corporation"
         }
       ]
@@ -233,6 +246,7 @@ module Engine
       "abilities": [
         {
           "type": "assign_hexes",
+          "when": "owning_corp_or_turn",
           "hexes": [
             "I1",
             "D6"
@@ -265,15 +279,18 @@ module Engine
             "G19"
           ],
           "count_per_or": 1,
+          "when": "or_start",
           "owner_type": "player"
         },
         {
           "type": "assign_corporation",
           "count_per_or": 1,
+          "when": "or_start",
           "owner_type": "player"
         },
         {
           "type": "assign_hexes",
+          "when": "owning_corp_or_turn",
           "hexes": [
             "B8",
             "C5",
@@ -301,6 +318,7 @@ module Engine
       "abilities": [
         {
            "type":"tile_lay",
+           "when": "owning_corp_or_turn",
            "owner_type":"corporation",
            "free":true,
            "hexes":[
@@ -316,7 +334,6 @@ module Engine
               "296"
             ],
            "special": false,
-           "when":"track",
            "count": 1
         }
       ]
@@ -338,8 +355,10 @@ module Engine
         },
         {
            "type":"tile_lay",
+           "when": "owning_corp_or_turn",
            "owner_type":"corporation",
            "free":true,
+           "must_lay_together": true,
            "hexes":[
               "B10",
               "B12"
@@ -349,8 +368,6 @@ module Engine
               "8",
               "9"
             ],
-           "when":"track",
-           "blocks":false,
            "count": 2
         }
       ]
@@ -372,8 +389,10 @@ module Engine
         },
         {
            "type":"tile_lay",
+           "when": "owning_corp_or_turn",
            "owner_type":"corporation",
            "free":true,
+           "must_lay_together": true,
            "hexes":[
               "F14",
               "F16"
@@ -383,8 +402,6 @@ module Engine
               "8",
               "9"
             ],
-           "when":"track",
-           "blocks": false,
            "count": 2
         }
       ]
@@ -414,7 +431,7 @@ module Engine
     {
       "float_percent": 20,
       "sym": "PRR",
-      "name": "Pennsylvania",
+      "name": "Pennsylvania Railroad",
       "logo": "1846/PRR",
       "tokens": [
         0,
@@ -440,13 +457,13 @@ module Engine
         }
       ],
       "coordinates": "F20",
-      "color": "red",
+      "color": "#FF0000",
       "always_market_price": true
     },
     {
       "float_percent": 20,
       "sym": "NYC",
-      "name": "New York Central",
+      "name": "New York Central Railroad",
       "logo": "1846/NYC",
       "tokens": [
         0,
@@ -461,7 +478,7 @@ module Engine
     {
       "float_percent": 20,
       "sym": "B&O",
-      "name": "Baltimore & Ohio",
+      "name": "Baltimore & Ohio Railroad",
       "logo": "1846/BO",
       "tokens": [
         0,
@@ -493,7 +510,7 @@ module Engine
     {
       "float_percent": 20,
       "sym": "C&O",
-      "name": "Chesapeake & Ohio",
+      "name": "Chesapeake & Ohio Railroad",
       "logo": "1846/CO",
       "tokens": [
         0,
@@ -502,14 +519,14 @@ module Engine
         80
       ],
       "coordinates": "I15",
-      "color": "lightBlue",
+      "color": "#ADD8E6",
       "text_color": "black",
       "always_market_price": true
     },
     {
       "float_percent": 20,
       "sym": "ERIE",
-      "name": "Erie",
+      "name": "Erie Railroad",
       "logo": "1846/ERIE",
       "tokens": [
         0,
@@ -535,14 +552,14 @@ module Engine
         }
       ],
       "coordinates": "E21",
-      "color": "yellow",
+      "color": "#FFF500",
       "text_color": "black",
       "always_market_price": true
     },
     {
       "float_percent": 20,
       "sym": "GT",
-      "name": "Grand Trunk",
+      "name": "Grand Trunk Railway",
       "logo": "1846/GT",
       "tokens": [
         0,
@@ -556,7 +573,7 @@ module Engine
     {
       "float_percent": 20,
       "sym": "IC",
-      "name": "Illinois Central",
+      "name": "Illinois Central Railroad",
       "logo": "1846/IC",
       "tokens": [
         0,
@@ -569,6 +586,8 @@ module Engine
             "type":"tile_lay",
             "free":true,
             "description": "Free tile lay: E5, F6, G5, H6, J4",
+            "passive": true,
+            "when": "track_and_token",
             "hexes":[
                "E5",
                "F6",

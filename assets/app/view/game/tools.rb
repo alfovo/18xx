@@ -20,8 +20,9 @@ module View
         @settings = Lib::Storage[@game.id] || {}
         h(:div, [
           h(Notepad),
+          h(RenameHotseat),
           *render_tools,
-          h(GameData, actions: @game.actions.map(&:to_h)),
+          h(GameData, actions: @game.raw_actions.map(&:to_h)),
         ])
       end
 

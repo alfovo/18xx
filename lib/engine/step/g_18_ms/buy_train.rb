@@ -29,11 +29,11 @@ module Engine
           if price > available_funds && must_buy_train?(entity)
 
             if can_sell_anything?(player, entity)
-              @game.game_error("#{player.name} may not loan money as long as #{entity.name} has shares to sell")
+              raise GameError, "#{player.name} may not loan money as long as #{entity.name} has shares to sell"
             end
 
             cheapest = @game.depot.min_depot_train
-            @game.game_error("#{player.name} may not loan money when affordable trains exist") if
+            raise GameError, "#{player.name} may not loan money when affordable trains exist" if
               cheapest.price <= available_funds
 
             # Prepare to take a loan
@@ -50,6 +50,8 @@ module Engine
           # Phase change triggered here to avoid problems that 2D is cheaper than 6 train (see issue #1553)
           @game.phase.next! if train.name == '6' && !@game.phase.available?('6')
           @game.phase.next! if train.name.include?('D') && !@game.phase.available?('D')
+          # Make D trains available in case 6 train is bought (see issue #3192)
+          @depot.depot_trains(clear: true) if train.name == '6'
 
           return unless emergency_buy_with_loan
 

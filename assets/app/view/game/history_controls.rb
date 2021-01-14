@@ -8,7 +8,6 @@ module View
   module Game
     class HistoryControls < Snabberb::Component
       include Actionable
-      needs :app_route, default: nil, store: true
       needs :num_actions, default: 0
       needs :game, store: true
       needs :round_history, default: nil, store: true
@@ -18,54 +17,39 @@ module View
 
         divs = [h('b.margined', 'History')]
         cursor = Lib::Params['action']&.to_i
+        style_extra = { padding: '0 1rem' }
 
         unless cursor&.zero?
-          divs << link('|<', 'Start', 0)
+          divs << history_link('|<', 'Start', 0, style_extra)
 
           last_round =
-            if cursor == @game.actions.size
+            if cursor == @game.raw_actions.size
               @game.round_history[-2]
             else
               @game.round_history[-1]
             end
-          divs << link('<<', 'Previous Round', last_round) if last_round
+          divs << history_link('<<', 'Previous Round', last_round, style_extra) if last_round
 
-          divs << link('<', 'Previous Action', cursor ? cursor - 1 : @num_actions - 1)
+          prev_action =
+            if @game.exception
+              @game.last_processed_action
+            elsif cursor
+              cursor - 1
+            else
+              @num_actions - 1
+            end
+          divs << history_link('<', 'Previous Action', prev_action, style_extra)
         end
 
-        if cursor
-          divs << link('>', 'Next Action', cursor + 1 < @num_actions ? cursor + 1 : nil)
+        if cursor && !@game.exception
+          divs << history_link('>', 'Next Action', cursor + 1 < @num_actions ? cursor + 1 : nil, style_extra)
           store(:round_history, @game.round_history, skip: true) unless @round_history
           next_round = @round_history[@game.round_history.size]
-          divs << link('>>', 'Next Round', next_round) if next_round
-          divs << link('>|', 'Current')
+          divs << history_link('>>', 'Next Round', next_round, style_extra) if next_round
+          divs << history_link('>|', 'Current', nil, style_extra)
         end
 
         h(:div, divs)
-      end
-
-      def link(text, title, action_id = nil)
-        route = Lib::Params.add(@app_route, 'action', action_id)
-
-        click = lambda do
-          store(:round_history, @game.round_history, skip: true) unless @round_history
-          store(:round_history, nil, skip: true) unless action_id
-          store(:app_route, route)
-          clear_ui_state
-        end
-
-        h(
-          Link,
-          href: route,
-          click: click,
-          title: title,
-          children: text,
-          style: {
-            color: 'currentColor',
-            marginRight: '2rem',
-            textDecoration: 'none',
-          },
-        )
       end
     end
   end

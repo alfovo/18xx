@@ -4,7 +4,6 @@ require 'view/game/actionable'
 require 'view/game/company'
 require 'view/game/par'
 require 'view/game/players'
-require 'view/game/undo_and_pass'
 
 module View
   module Game
@@ -40,6 +39,7 @@ module View
               render_turn_bid,
               render_show_button,
               *render_companies,
+              *render_minors,
               *render_corporations,
               render_players,
             ].compact)
@@ -61,7 +61,8 @@ module View
         def render_company_pending_par
           children = []
 
-          @step.companies_pending_par.first.abilities(:shares).shares.each do |share|
+          company = @step.companies_pending_par.first
+          @game.abilities(company, :shares).shares.each do |share|
             next unless share.president
 
             children << h(Corporation, corporation: share.corporation)
@@ -101,6 +102,17 @@ module View
 
           @selected_company = @step.auctioning if @step.auctioning
 
+          companies = @step.available.select(&:company?)
+          if @step.respond_to?(:tiered_auction?) && @step.tiered_auction?
+            companies.group_by(&:value).values.map do |tier|
+              h(:div, { style: { display: 'table' } }, tier.map { |company| render_company(company) })
+            end
+          else
+            companies.map { |company| render_company(company) }
+          end
+        end
+
+        def render_company(company)
           props = {
             style: {
               display: 'inline-block',
@@ -108,67 +120,62 @@ module View
             },
           }
 
-          @step.available.select(&:company?).map do |company|
-            children = [h(Company, company: company, bids: @step.bids[company])]
-            children << render_input(company) if @selected_company == company
-            h(:div, props, children)
-          end
+          children = [h(Company, company: company, bids: @step.bids[company])]
+          children << render_input(company) if @selected_company == company
+          h(:div, props, children)
         end
 
         def render_input(company)
-          buy = lambda do
-            hide!
-            process_action(Engine::Action::Bid.new(
-              @current_entity,
-              company: company,
-              price: @step.min_bid(company),
-            ))
-            store(:selected_company, nil, skip: true)
+          actions = render_company_actions(company)
+
+          if @step.respond_to?(:may_reduce?) && @step.may_reduce?(company)
+            actions << h(:button, { on: { click: -> { assign(company) } } }, 'Reduce Price')
           end
 
-          choose = lambda do
-            hide!
-            process_action(Engine::Action::Bid.new(@current_entity,
-                                                   company: @selected_company,
-                                                   price: @selected_company.value))
-            store(:selected_company, nil, skip: true)
+          h(:div, { style: { textAlign: 'center', margin: '1rem' } }, actions)
+        end
+
+        def render_company_actions(company)
+          return [] if @step.auctioneer? && @step.max_bid(@current_entity, company) < @step.min_bid(company)
+          return [h(:button, { on: { click: -> { buy(company) } } }, 'Buy')] if @step.may_purchase?(company)
+          return [h(:button, { on: { click: -> { choose } } }, 'Choose')] if @step.may_choose?(company)
+
+          input = h(:input, style: { marginRight: '1rem' }, props: {
+            value: @step.min_bid(company),
+            step: @step.min_increment,
+            min: @step.min_bid(company),
+            max: @step.max_bid(@current_entity, company),
+            type: 'number',
+            size: @current_entity.cash.to_s.size,
+          })
+
+          buttons = []
+          if @step.min_bid(company) <= @step.max_place_bid(@current_entity, company)
+            buttons << h(:button, { on: { click: -> { create_bid(company, input) } } }, 'Place Bid')
           end
+          buttons.concat(render_move_bid_buttons(company, input))
 
-          company_actions =
-            if @step.may_purchase?(company)
-              [h(:button, { on: { click: buy } }, 'Buy')]
-            elsif @step.may_choose?(company)
-              [h(:button, { on: { click: choose } }, 'Choose')]
-            else
+          return [] if buttons.empty?
 
-              step = @step.min_increment
+          [input, *buttons]
+        end
 
-              input = h(:input, style: { marginRight: '1rem' }, props: {
-                value: @step.min_bid(company),
-                step: step,
-                min: @step.min_bid(company) + step,
-                max: @step.max_bid(@current_entity, company),
-                type: 'number',
-                size: @current_entity.cash.to_s.size,
-              })
+        def render_move_bid_buttons(company, input)
+          return [] unless @current_actions.include?('move_bid')
 
-              create_bid = lambda do
-                hide!
-                price = input.JS['elm'].JS['value'].to_i
-                process_action(Engine::Action::Bid.new(
-                  @current_entity,
-                  company: company,
-                  price: price,
-                ))
-                store(:selected_company, nil, skip: true)
-              end
-              [
-                input,
-                h(:button, { on: { click: create_bid } }, 'Place Bid'),
-              ]
+          moveable_bids = @step.moveable_bids(@current_entity, company)
+          return [] if moveable_bids.empty?
+
+          moveable_bids.flat_map do |from_company, from_bids|
+            from_bids.map do |from_bid|
+              bid_max = @step.max_move_bid(@current_entity, company, from_bid.price)
+              bid_min = @step.min_move_bid(company, from_bid.price)
+              next if bid_max < bid_min
+
+              h(:button, { on: { click: -> { move_bid(company, input, from_company, from_bid.price) } } },
+                "Move #{from_company.sym} #{@game.format_currency(from_bid.price)} Bid")
             end
-
-          h(:div, { style: { textAlign: 'center', margin: '1rem' } }, company_actions)
+          end.compact
         end
 
         def render_turn_bid
@@ -183,19 +190,42 @@ module View
             size: @current_entity.cash.to_s.size,
           })
 
-          create_bid = lambda do
-            hide!
-            price = input.JS['elm'].JS['value'].to_i
-            process_action(Engine::Action::Bid.new(
-              @current_entity,
-              price: price,
-            ))
-          end
           h(:div,
             [
               input,
-              h(:button, { on: { click: create_bid } }, 'Place Bid'),
+              h(:button, { on: { click: -> { create_turn_bid(input) } } }, 'Place Bid'),
             ])
+        end
+
+        def render_minors
+          return [] unless @current_actions.include?('bid')
+
+          props = {
+            style: {
+              display: 'inline-block',
+              verticalAlign: 'top',
+            },
+          }
+
+          @step.available.select(&:minor?).map do |minor|
+            children = [h(Corporation, corporation: minor)]
+            children << render_minor_choose_input(minor) if @selected_corporation == minor
+            h(:div, props, children)
+          end
+        end
+
+        def render_minor_choose_input(minor)
+          choose = lambda do
+            hide!
+            process_action(Engine::Action::Bid.new(@current_entity,
+                                                   minor: minor,
+                                                   price: 0))
+            store(:selected_corporation, nil, skip: true)
+          end
+
+          minor_actions = [h(:button, { on: { click: choose } }, 'Choose')]
+
+          h(:div, { style: { textAlign: 'center', margin: '1rem' } }, minor_actions)
         end
 
         def render_corporations
@@ -213,7 +243,8 @@ module View
           @step.available.select(&:corporation?).map do |corporation|
             children = []
             children << h(Corporation, corporation: corporation)
-            children << render_ipo_input if @selected_corporation == corporation
+            children << render_ipo_input if @selected_corporation == corporation && !corporation.ipoed
+            children << render_corp_choose_input if @selected_corporation == corporation && corporation.ipoed
             h(:div, props, children)
           end.compact
         end
@@ -222,12 +253,83 @@ module View
           h('div.margined_bottom', { style: { width: '20rem' } }, [h(Par, corporation: @selected_corporation)])
         end
 
+        def render_corp_choose_input
+          choose = lambda do
+            hide!
+            process_action(Engine::Action::Bid.new(@current_entity,
+                                                   corporation: @selected_corporation,
+                                                   price: 0))
+            store(:selected_corporation, nil, skip: true)
+          end
+
+          corp_actions = [h(:button, { on: { click: choose } }, 'Choose')]
+
+          h(:div, { style: { textAlign: 'center', margin: '1rem' } }, corp_actions)
+        end
+
         def hide!
           store(:hidden, true, skip: true)
         end
 
         def hidden?
           @block_show || @hidden
+        end
+
+        def create_bid(company, input)
+          hide!
+          price = input.JS['elm'].JS['value'].to_i
+          process_action(Engine::Action::Bid.new(
+            @current_entity,
+            company: company,
+            price: price,
+          ))
+          store(:selected_company, nil, skip: true)
+        end
+
+        def create_turn_bid(input)
+          hide!
+          price = input.JS['elm'].JS['value'].to_i
+          process_action(Engine::Action::Bid.new(
+            @current_entity,
+            price: price,
+          ))
+        end
+
+        def assign(company)
+          process_action(Engine::Action::Assign.new(@current_entity, target: company))
+        end
+
+        def choose
+          hide!
+          process_action(Engine::Action::Bid.new(
+            @current_entity,
+            company: @selected_company,
+            price: @selected_company.value
+          ))
+          store(:selected_company, nil, skip: true)
+        end
+
+        def buy(company)
+          hide!
+          process_action(Engine::Action::Bid.new(
+            @current_entity,
+            company: company,
+            price: @step.min_bid(company),
+          ))
+          store(:selected_company, nil, skip: true)
+        end
+
+        def move_bid(company, input, from_company, from_price)
+          hide!
+          price = input.JS['elm'].JS['value'].to_i
+          process_action(Engine::Action::MoveBid.new(
+            @current_entity,
+            company: company,
+            from_company: from_company,
+            price: price,
+            from_price: from_price,
+          ))
+          store(:selected_company, nil, skip: true)
         end
       end
     end

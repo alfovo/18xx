@@ -16,6 +16,9 @@ module View
 
       SIZE = 100
 
+      FRAME_COLOR_STROKE_WIDTH = 10
+      FRAME_COLOR_POINTS = Lib::Hex.points(scale: 1 - ((FRAME_COLOR_STROKE_WIDTH + 1) / 2) / Lib::Hex::Y_B).freeze
+
       LAYOUT = {
         flat: [SIZE * 3 / 2, SIZE * Math.sqrt(3) / 2],
         pointy: [SIZE * Math.sqrt(3) / 2, SIZE * 3 / 2],
@@ -31,6 +34,10 @@ module View
       needs :actions, default: []
       needs :entity, default: nil
       needs :unavailable, default: nil
+      needs :show_coords, default: nil
+      needs :show_location_names, default: true
+      needs :routes, default: []
+      needs :start_pos, default: [1, 1]
 
       def render
         return nil if @hex.empty
@@ -42,10 +49,27 @@ module View
           else
             @hex.tile
           end
-        children = [h(:polygon, attrs: { points: Lib::Hex::POINTS })]
-        children << h(Tile, tile: @tile) if @tile
+        children = hex_outline
+        if @tile
+          children << h(
+            Tile,
+            tile: @tile,
+            show_coords: @show_coords && (@role == :map),
+            show_location_names: @show_location_names,
+            routes: @routes
+          )
+        end
         children << h(TriangularGrid) if Lib::Params['grid']
         children << h(TileUnavailable, unavailable: @unavailable, layout: @hex.layout) if @unavailable
+
+        if (color = @tile&.frame&.color)
+          attrs = {
+            stroke: color,
+            'stroke-width': FRAME_COLOR_STROKE_WIDTH,
+            points: FRAME_COLOR_POINTS,
+          }
+          children.insert(1, h(:polygon, attrs: attrs))
+        end
 
         props = {
           key: @hex.id,
@@ -64,18 +88,36 @@ module View
         h(:g, props, children)
       end
 
+      def hex_outline
+        polygon_props = { attrs: { points: Lib::Hex::POINTS } }
+
+        invisible_edges = @tile.borders.select { |b| b.type.nil? }.map(&:edge) if @tile
+        if invisible_edges&.any?
+          polygon_props[:attrs][:stroke] = 'none'
+          shapes = [h(:polygon, polygon_props)]
+
+          (Engine::Tile::ALL_EDGES - invisible_edges).each do |edge|
+            shapes << h(:path, attrs: { d: Lib::Hex::EDGE_PATHS[edge] })
+          end
+
+          shapes
+        else
+          [h(:polygon, polygon_props)]
+        end
+      end
+
       def translation
         x, y = coordinates
         "translate(#{x}, #{y})"
       end
 
-      def self.coordinates(hex)
+      def self.coordinates(hex, start_pos = [1, 1])
         t_x, t_y = LAYOUT[hex.layout]
-        [(t_x * hex.x + SIZE).round(2), (t_y * hex.y + SIZE).round(2)]
+        [(t_x * (hex.x - start_pos[0] + 1) + SIZE).round(2), (t_y * (hex.y - start_pos[1] + 1) + SIZE).round(2)]
       end
 
       def coordinates
-        self.class.coordinates(@hex)
+        self.class.coordinates(@hex, @start_pos)
       end
 
       def transform
@@ -85,7 +127,9 @@ module View
       def on_hex_click
         return if @actions.empty? && @role != :tile_page
 
-        return store(:tile_selector, nil) if !@clickable || (@hex == @tile_selector&.hex && !@tile_selector.tile)
+        if !@clickable || (@hex == @tile_selector&.hex && !(@tile_selector.respond_to?(:tile) && @tile_selector.tile))
+          return store(:tile_selector, nil)
+        end
 
         nodes = @hex.tile.nodes
 

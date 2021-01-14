@@ -32,18 +32,22 @@ module Engine
           msg = "Cannot go bankrupt. #{corp.name}'s cash plus #{player.name}'s cash and "\
                 "sellable shares total #{buying_power}, and the cheapest train in the "\
                 "Depot costs #{price}."
-          @game.game_error(msg)
+          raise GameError, msg
         end
 
         @log << "-- #{player.name} goes bankrupt and sells remaining shares --"
 
         player.shares_by_corporation.each do |corporation, _|
           next unless corporation.share_price # if a corporation has not parred
-          next unless (bundle = @game.sellable_bundles(player, corporation).max_by(&:price))
 
-          @game.sell_shares_and_change_price(bundle)
-          @round.recalculate_order
+          # Do a potential repeated sell of bundles. This is important for NdM in 18MEX
+          # which might have 5% bundle(s) besides the 10%+ bundles.
+          # Most other titles this will just sell one, the largest, bundle.
+          while (bundle = @game.sellable_bundles(player, corporation).max_by(&:price))
+            @game.sell_shares_and_change_price(bundle)
+          end
         end
+        @round.recalculate_order if @round.respond_to?(:recalculate_order)
 
         player.spend(player.cash, @game.bank) if player.cash.positive?
 

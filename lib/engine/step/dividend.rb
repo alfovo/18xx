@@ -117,8 +117,10 @@ module Engine
         per_share = payout_per_share(entity, revenue)
 
         payouts = {}
-        @game.players.each do |player|
-          payout_entity(entity, player, per_share, payouts)
+        (@game.players + @game.corporations).each do |payee|
+          next if entity == payee
+
+          payout_entity(entity, payee, per_share, payouts)
         end
 
         payout_entity(entity, holder_for_corporation(entity), per_share, payouts, entity)
@@ -166,7 +168,9 @@ module Engine
       end
 
       def rust_obsolete_trains!(entity)
-        (rusted_trains = entity.trains.select(&:obsolete)).each(&:rust!)
+        rusted_trains = entity.trains.select(&:obsolete).each do |train|
+          @game.rust(train)
+        end
 
         @log << '-- Event: Obsolete trains rust --' if rusted_trains.any?
       end

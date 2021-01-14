@@ -10,8 +10,8 @@ module Engine
     include Entity
     include Ownable
 
-    attr_accessor :desc, :max_price, :min_price, :revenue, :discount
-    attr_reader :name, :sym, :value, :min_auction_price, :treasury
+    attr_accessor :desc, :max_price, :min_price, :revenue, :discount, :value
+    attr_reader :name, :sym, :min_auction_price, :treasury
 
     def initialize(sym:, name:, value:, revenue: 0, desc: '', abilities: [], **opts)
       @sym = sym
@@ -68,9 +68,10 @@ module Engine
     end
 
     def find_token_by_type(token_type)
-      raise GameError, "#{name} does not have a token" unless abilities(:token)
+      token_ability = all_abilities.find { |a| a.type == :token }
+      raise GameError, "#{name} does not have a token" unless token_ability
 
-      return @owner.find_token_by_type(token_type) if abilities(:token).from_owner
+      return @owner.find_token_by_type(token_type) if token_ability.from_owner
 
       Token.new(@owner)
     end

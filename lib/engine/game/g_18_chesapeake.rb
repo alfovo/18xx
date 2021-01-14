@@ -27,17 +27,27 @@ module Engine
       GAME_INFO_URL = 'https://github.com/tobymao/18xx/wiki/18Chesapeake'
 
       MUST_BID_INCREMENT_MULTIPLE = true
+      ONLY_HIGHEST_BID_COMMITTED = true
       SELL_BUY_ORDER = :sell_buy
 
       def init_share_pool
         Engine::G18Chesapeake::SharePool.new(self)
       end
 
+      def preprocess_action(action)
+        case action
+        when Action::LayTile
+          queue_log! do
+            check_special_tile_lay(action, baltimore)
+            check_special_tile_lay(action, columbia)
+          end
+        end
+      end
+
       def action_processed(action)
         case action
         when Action::LayTile
-          check_special_tile_lay(action, columbia)
-          check_special_tile_lay(action, baltimore)
+          flush_log!
         end
       end
 
@@ -51,13 +61,13 @@ module Engine
       def operating_round(round_num)
         Round::Operating.new(self, [
           Step::Bankrupt,
-          Step::DiscardTrain,
           Step::SpecialTrack,
           Step::BuyCompany,
           Step::Track,
           Step::Token,
           Step::Route,
           Step::Dividend,
+          Step::DiscardTrain,
           Step::BuyTrain,
           [Step::BuyCompany, blocks: true],
         ], round_num: round_num)
@@ -66,13 +76,13 @@ module Engine
       def setup
         cornelius.add_ability(Ability::Close.new(
           type: :close,
-          when: :train,
-          corporation: cornelius.abilities(:shares).shares.first.corporation.name,
+          when: 'bought_train',
+          corporation: abilities(cornelius, :shares).shares.first.corporation.name,
         ))
 
         return unless two_player?
 
-        cv_corporation = cornelius.abilities(:shares).shares.first.corporation
+        cv_corporation = abilities(cornelius, :shares).shares.first.corporation
 
         @corporations.each do |corporation|
           next if corporation == cv_corporation
@@ -86,7 +96,7 @@ module Engine
       end
 
       def check_special_tile_lay(action, company)
-        company.abilities(:tile_lay) do |ability|
+        abilities(company, :tile_lay, time: 'any') do |ability|
           hexes = ability.hexes
           next unless hexes.include?(action.hex.id)
           next if company.closed? || action.entity == company

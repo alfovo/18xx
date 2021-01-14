@@ -27,9 +27,9 @@ module Engine
         def lay_tile_action(action)
           tile = action.tile
           tile_lay = get_tile_lay(action.entity)
-          @game.game_error('Cannot lay an upgrade now') if tile.color != :yellow && !tile_lay[:upgrade]
-          @game.game_error('Cannot lay an yellow now') if tile.color == :yellow && !tile_lay[:lay]
-          @game.game_error('Cannot lay a city tile now') if tile.cities.any? && @laid_track.positive?
+          raise GameError, 'Cannot lay an upgrade now' if tile.color != :yellow && !tile_lay[:upgrade]
+          raise GameError, 'Cannot lay an yellow now' if tile.color == :yellow && !tile_lay[:lay]
+          raise GameError, 'Cannot lay a city tile now' if tile.cities.any? && @laid_track.positive?
 
           lay_tile(action, extra_cost: tile_lay[:cost])
           @upgraded = true if action.tile.color != :yellow
@@ -47,24 +47,24 @@ module Engine
 
           @game.companies.each do |company|
             next if company.closed?
-            next unless (ability = company.abilities(:blocks_hexes))
+            next unless (ability = @game.abilities(company, :blocks_hexes))
 
-            @game.game_error("#{hex.id} is blocked by #{company.name}") if ability.hexes.include?(hex.id)
+            raise GameError, "#{hex.id} is blocked by #{company.name}" if ability.hexes.include?(hex.id)
           end
 
           tile.rotate!(rotation)
 
           unless @game.upgrades_to?(old_tile, tile, entity.company?)
-            @game.game_error("#{old_tile.name} is not upgradeable to #{tile.name}")
+            raise GameError, "#{old_tile.name} is not upgradeable to #{tile.name}"
           end
 
           if !@game.loading && !legal_tile_rotation?(entity, hex, tile)
-            @game.game_error("#{old_tile.name} is not legally rotated for #{tile.name}")
+            raise GameError, "#{old_tile.name} is not legally rotated for #{tile.name}"
           end
 
           @game.add_extra_tile(tile) if tile.unlimited
 
-          max_distance = @game.biggest_train(entity)
+          max_distance = @game.biggest_train_distance(entity)
           old_revenues = if old_tile.color == :white
                            []
                          else
@@ -86,7 +86,7 @@ module Engine
           tile_lay_abilities(entity) do |ability|
             next if ability.hexes.any? && (!ability.hexes.include?(hex.id) || !ability.tiles.include?(tile.name))
 
-            @game.game_error("Track laid must be connected to one of #{spender.id}'s stations") if ability.reachable &&
+            raise GameError, "Track laid must be connected to one of #{spender.id}'s stations" if ability.reachable &&
               hex.name != spender.coordinates &&
               !@game.loading &&
               !@game.graph.reachable_hexes(spender)[hex]
@@ -96,7 +96,7 @@ module Engine
             extra_cost += ability.cost
           end
 
-          entity.abilities(:teleport) do |ability, _|
+          @game.abilities(entity, :teleport) do |ability, _|
             ability.use! if ability.hexes.include?(hex.id) && ability.tiles.include?(tile.name)
           end
 
@@ -110,8 +110,12 @@ module Engine
             else
               border, border_types = border_cost(tile, entity)
               terrain += border_types if border.positive?
-              @game.tile_cost(old_tile, entity) + border + extra_cost - discount
+              @game.upgrade_cost(old_tile, hex, entity) + border + extra_cost - discount
             end
+
+          if @game.insolvent?(spender) && cost.positive?
+            raise GameError, "#{spender.id} cannot pay for a tile when insolvent"
+          end
 
           spender.spend(cost, @game.bank) if cost.positive?
 
@@ -132,7 +136,8 @@ module Engine
           @log << "#{spender.name}"\
             "#{cost.zero? ? '' : " spends #{@game.format_currency(cost)} and"}"\
             " lays tile ##{tile.name}"\
-            " with rotation #{rotation} on #{hex.name}"
+            " with rotation #{rotation} on #{hex.name}"\
+            "#{tile.location_name.to_s.empty? ? '' : " (#{tile.location_name})"}"
 
           return unless terrain.any?
 
@@ -154,8 +159,9 @@ module Engine
           if old_tile.color != :white
             # add requirement that paths/nodes be reachable with train
             unless reachable_hex?(entity, new_tile.hex, max_distance)
-              @game.game_error('Tile must be reachable with train')
+              raise GameError, 'Tile must be reachable with train'
             end
+
             new_revenues = new_tile.nodes.select { |n| reachable_node?(entity, n, max_distance) }
                              .map(&:max_revenue).sort
             changed_city = old_revenues != new_revenues
@@ -182,14 +188,30 @@ module Engine
           when :permissive
             true
           when :city_permissive
-            @game.game_error('Must be city tile or use new track') if new_tile.cities.none? && !used_new_track
+            raise GameError, 'Must be city tile or use new track' if new_tile.cities.none? && !used_new_track
           when :restrictive
-            @game.game_error('Must use new track') unless used_new_track
+            raise GameError, 'Must use new track' unless used_new_track
           when :semi_restrictive
-            @game.game_error('Must use new track or change city value') if !used_new_track && !changed_city
+            raise GameError, 'Must use new track or change city value' if !used_new_track && !changed_city
           else
             raise
           end
+        end
+
+        # can be used by Step to see if any layable tiles exist for a given hex
+        # This has fewer side-effects than the base upgradeable_tiles method
+        def any_upgradeable_tiles?(entity, hex)
+          potential_tiles(entity, hex).each do |tile|
+            return true if tile.legal_rotations.any?
+
+            tile.rotate!(0) # reset tile to no rotation since calculations are absolute
+            tile.legal_rotations = legal_tile_rotations(entity, hex, tile)
+            next if tile.legal_rotations.empty?
+
+            tile.rotate! # rotate it to the first legal rotation
+            return true
+          end
+          false
         end
 
         def legal_tile_rotation?(entity, hex, tile)

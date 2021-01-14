@@ -10,11 +10,14 @@ module View
       include EmergencyMoney
       needs :show_other_players, default: nil, store: true
       needs :selected_corporation, default: nil, store: true
+      needs :active_shell, default: nil, store: true
 
       def render_president_contributions
         player = @corporation.owner
 
         children = []
+
+        verb = @must_buy_train ? 'must' : 'may'
 
         cash = @corporation.cash + player.cash
         share_funds_required = @depot.min_depot_price - cash
@@ -25,9 +28,11 @@ module View
                               end
         share_funds_possible = @game.liquidity(player, emergency: true) - player.cash
 
-        children << h(:div, "#{player.name} must contribute "\
-                            "#{@game.format_currency(@depot.min_depot_price - @corporation.cash)} "\
-                            "for #{@corporation.name} to afford a train from the Depot.")
+        if @depot.min_depot_price > @corporation.cash
+          children << h(:div, "#{player.name} #{verb} contribute "\
+                              "#{@game.format_currency(@depot.min_depot_price - @corporation.cash)} "\
+                              "for #{@corporation.name} to afford a train from the Depot.")
+        end
 
         children << h(:div, "#{player.name} has #{@game.format_currency(player.cash)} in cash.")
 
@@ -37,7 +42,7 @@ module View
         end
 
         if share_funds_required.positive?
-          children << h(:div, "#{player.name} must sell shares to raise at least "\
+          children << h(:div, "#{player.name} #{verb} sell shares to raise at least "\
                               "#{@game.format_currency(share_funds_required)}.")
         end
 
@@ -48,7 +53,7 @@ module View
                               "#{@game.format_currency(share_funds_allowed)}.")
         end
 
-        if share_funds_possible < share_funds_required
+        if @must_buy_train && share_funds_possible < share_funds_required
           children << h(:div, "#{player.name} does not have enough liquidity to "\
                               "contribute towards #{@corporation.name} buying a train "\
                               "from the Depot. #{@corporation.name} must buy a "\
@@ -64,7 +69,9 @@ module View
       def render
         step = @game.round.active_step
         @corporation = step.current_entity
-        @ability = @selected_company&.abilities(:train_discount, 'train') if @selected_company&.owner == @corporation
+        if @selected_company&.owner == @corporation
+          @ability = @game.abilities(@selected_company, :train_discount, time: 'buying_train')
+        end
 
         @depot = @game.depot
 
@@ -73,8 +80,10 @@ module View
         other_corp_trains = available.sort_by { |c, _| c.owner == @corporation.owner ? 0 : 1 }
         children = []
 
-        must_buy_train = step.must_buy_train?(@corporation)
-        should_buy_train = step.should_buy_train?(@corporation)
+        @must_buy_train = step.must_buy_train?(@corporation)
+        @should_buy_train = step.should_buy_train?(@corporation)
+
+        @president_may_contribute = step.president_may_contribute?(@corporation, @active_shell)
 
         h3_props = {
           style: {
@@ -90,9 +99,16 @@ module View
           },
         }
 
-        if (step.can_buy_train?(@corporation) && step.room?(@corporation)) || must_buy_train
-          children << h(:div, "#{@corporation.name} must buy an available train") if must_buy_train
-          if should_buy_train == :liquidation
+        if @corporation.system?
+          children << render_shells
+        else
+          store(:active_shell, nil, skip: true)
+        end
+
+        if (step.can_buy_train?(@corporation, @active_shell) && step.room?(@corporation, @active_shell)) ||
+           @must_buy_train
+          children << h(:div, "#{@corporation.name} must buy an available train") if @must_buy_train
+          if @should_buy_train == :liquidation
             children << h(:div, "#{@corporation.name} must buy a train or it will be liquidated")
           end
           children << h(:h3, h3_props, 'Available Trains')
@@ -104,23 +120,25 @@ module View
 
         discountable_trains = @depot.discountable_trains_for(@corporation)
 
-        if discountable_trains.any?
+        if discountable_trains.any? && step.discountable_trains_allowed?(@corporation)
           children << h(:h3, h3_props, 'Exchange Trains')
 
-          discountable_trains.each do |train, discount_train, price|
+          discountable_trains.each do |train, discount_train, variant, price|
             exchange_train = lambda do
               process_action(
                 Engine::Action::BuyTrain.new(
                   @corporation,
                   train: discount_train,
                   price: price,
+                  variant: variant,
                   exchange: train,
+                  shell: @active_shell,
                 )
               )
             end
 
             children << h(:div, [
-              "#{train.name} -> #{discount_train.name} #{@game.format_currency(price)} ",
+              "#{train.name} -> #{variant} #{@game.format_currency(price)} ",
               h('button.no_margin', { on: { click: exchange_train } }, 'Exchange'),
             ])
           end
@@ -130,13 +148,14 @@ module View
         children << remaining_trains
 
         children << h(:div, "#{@corporation.name} has #{@game.format_currency(@corporation.cash)}.")
-        if (issuable_cash = @game.emergency_issuable_cash(@corporation)).positive?
+        if step.issuable_shares(@corporation).any? &&
+           (issuable_cash = @game.emergency_issuable_cash(@corporation)).positive?
           children << h(:div, "#{@corporation.name} can issue shares to raise up to "\
                               "#{@game.format_currency(issuable_cash)} (the corporation "\
                               'must issue shares before the president may contribute).')
         end
 
-        if must_buy_train && step.ebuy_president_can_contribute?(@corporation)
+        if (@must_buy_train && step.ebuy_president_can_contribute?(@corporation)) || @president_may_contribute
           children.concat(render_president_contributions)
         end
 
@@ -160,6 +179,7 @@ module View
             price = variant[:price]
             president_assist, _fee = @game.president_assisted_buy(@corporation, train, price)
             price = @ability&.discounted_price(train, price) || price
+            price = @game.discard_discount(train, price)
 
             buy_train = lambda do
               process_action(Engine::Action::BuyTrain.new(
@@ -167,6 +187,7 @@ module View
                 train: train,
                 price: price,
                 variant: name,
+                shell: @active_shell,
               ))
             end
 
@@ -194,13 +215,22 @@ module View
               attrs: price_range(group[0]),
             )
 
-            buy_train = lambda do
+            buy_train_click = lambda do
               price = input.JS['elm'].JS['value'].to_i
-              process_action(Engine::Action::BuyTrain.new(
-                @corporation,
-                train: group[0],
-                price: price,
-              ))
+              buy_train = lambda do
+                process_action(Engine::Action::BuyTrain.new(
+                  @corporation,
+                  train: group[0],
+                  price: price,
+                  shell: @active_shell,
+                ))
+              end
+
+              if other.owner == @corporation.owner
+                buy_train.call
+              else
+                check_consent(other.owner, buy_train)
+              end
             end
 
             count = group.size
@@ -209,7 +239,7 @@ module View
               [h(:div, name),
                h('div.nowrap', "#{other.name} (#{count > 1 ? "#{count}, " : ''}#{other.owner.name})"),
                input,
-               h('button.no_margin', { on: { click: buy_train } }, 'Buy')]
+               h('button.no_margin', { on: { click: buy_train_click } }, 'Buy')]
             else
               hidden_trains = true
               nil
@@ -282,6 +312,30 @@ module View
           h('div.bold', 'Qty'),
           *rows,
         ])
+      end
+
+      def render_shells
+        @active_shell = @corporation.shells.first if !@active_shell || @active_shell.system != @corporation
+
+        buttons = @corporation.shells.flat_map do |shell|
+          button_props = {
+            on: {
+              click: -> { store(:active_shell, shell) },
+            },
+          }
+          button_props[:class] = { active: true } if @active_shell == shell
+
+          h(:button, button_props, "#{shell.name} shell")
+        end
+
+        button_div_props = {
+          style: {
+            display: 'grid',
+            grid: 'auto / repeat(2, max-content)',
+            gap: '0.5rem',
+          },
+        }
+        h(:div, button_div_props, buttons)
       end
     end
   end

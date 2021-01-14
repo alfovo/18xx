@@ -46,8 +46,6 @@ class Api < Roda
   plugin :error_handler
 
   error do |e|
-    puts e.backtrace.reverse
-    puts "#{e.class}: #{e.message}"
     LOGGER.error e.backtrace
     { error: e.message }
   end
@@ -58,6 +56,7 @@ class Api < Roda
   plugin :json
   plugin :json_parser
   plugin :halt
+  plugin :cookies
 
   ASSETS = Assets.new(precompiled: PRODUCTION)
 
@@ -67,7 +66,7 @@ class Api < Roda
   use Rack::Deflater unless PRODUCTION
 
   STANDARD_ROUTES = %w[
-    / about hotseat login map new_game profile signup tiles tutorial forgot reset
+    / about hotseat login map market new_game profile signup tiles tutorial forgot reset fixture
   ].freeze
 
   Dir['./routes/*'].sort.each { |file| require file }
@@ -81,7 +80,7 @@ class Api < Roda
 
         publish(
           '/chat',
-          50,
+          100,
           user: user.to_h,
           message: hr.params['message'],
           created_at: Time.now.to_i,
@@ -116,7 +115,8 @@ class Api < Roda
   end
 
   def render(**needs)
-    return debug(**needs) if request.params['debug'] && !PRODUCTION
+    needs[:user] = user&.to_h(for_user: true)
+
     return render_pin(**needs) if needs[:pin]
 
     script = Snabberb.prerender_script(
@@ -138,17 +138,6 @@ class Api < Roda
       desc: "Pin #{pin}",
       js_tags: "<script type='text/javascript' src='#{Assets::PIN_DIR}#{pin}.js'></script>",
       attach_func: "Opal.$$.App.$attach('app', #{Snabberb.wrap(app_route: request.path, **needs)})",
-    )
-  end
-
-  def debug(**needs)
-    needs[:disable_user_errors] = true
-    needs = Snabberb.wrap(app_route: request.path, **needs)
-
-    static(
-      desc: 'Debug',
-      js_tags: ASSETS.js_tags,
-      attach_func: "Opal.$$.App.$attach('app', #{needs})",
     )
   end
 
@@ -184,7 +173,7 @@ class Api < Roda
   end
 
   def session
-    return unless (token = request.env['HTTP_AUTHORIZATION'])
+    return unless (token = request.cookies['auth_token'])
 
     @session ||= Session.find(token: token)
   end
@@ -211,7 +200,7 @@ class Api < Roda
   end
 
   MessageBus.user_id_lookup do |env|
-    next unless (token = env['HTTP_AUTHORIZATION'])
+    next unless (token = Rack::Request.new(env).cookies['auth_token'])
 
     ip =
       if (addr = env['HTTP_X_FORWARDED_FOR'])

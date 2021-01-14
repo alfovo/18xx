@@ -44,13 +44,13 @@ module Engine
       def can_lay_tile?(entity)
         free = false
 
-        entity.abilities(:tile_lay) do |ability|
+        @game.abilities(entity, :tile_lay) do |ability|
           ability.hexes.each do |hex_id|
             free = true if ability.free && @game.hex_by_id(hex_id).tile.preprinted
           end
         end
 
-        (free || @game.buying_power(entity) >= @game.class::TILE_COST) && super
+        (free || buying_power(entity) >= @game.class::TILE_COST) && super
       end
 
       def process_place_token(action)

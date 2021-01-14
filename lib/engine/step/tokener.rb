@@ -9,7 +9,7 @@ module Engine
       def can_place_token?(entity)
         current_entity == entity &&
           (tokens = available_tokens(entity)).any? &&
-          min_token_price(tokens) <= @game.buying_power(entity) &&
+          min_token_price(tokens) <= buying_power(entity) &&
           @game.graph.can_token?(entity)
       end
 
@@ -26,22 +26,27 @@ module Engine
         hex = city.hex
         if !@game.loading && !teleport && !@game.graph.connected_nodes(entity)[city]
           city_string = hex.tile.cities.size > 1 ? " city #{city.index}" : ''
-          @game.game_error("Cannot place token on #{hex.name}#{city_string} because it is not connected")
+          raise GameError, "Cannot place token on #{hex.name}#{city_string} because it is not connected"
         end
 
         if special_ability&.city && (special_ability.city != city.index)
-          @game.game_error("#{special_ability.owner.name} can only place token on #{hex.name} city "\
-                           "#{special_ability.city}, not on city #{city.index}")
+          raise GameError, "#{special_ability.owner.name} can only place token on #{hex.name} city "\
+                           "#{special_ability.city}, not on city #{city.index}"
         end
 
-        @game.game_error('Token is already used') if token.used
+        raise GameError, 'Token is already used' if token.used
 
-        token, ability = adjust_token_price_ability!(entity, token, hex, city)
-        entity.remove_ability(ability) if ability
+        token, ability = adjust_token_price_ability!(entity, token, hex, city, special_ability)
+        tokener = entity.name
+        if ability
+          tokener = "#{entity.name} (#{ability.owner.sym})" if ability.owner != entity
+          entity.remove_ability(ability)
+        end
+
         free = !token.price.positive?
         city.place_token(entity, token, free: free, cheater: special_ability&.cheater)
         unless free
-          entity.spend(token.price, @game.bank)
+          pay_token_cost(entity, token.price)
           price_log = " for #{@game.format_currency(token.price)}"
         end
 
@@ -49,12 +54,16 @@ module Engine
         when :neutral
           entity.tokens.delete(token)
           token.corporation.tokens << token
-          @log << "#{entity.name} places a neutral token on #{hex.name}#{price_log}"
+          @log << "#{tokener} places a neutral token on #{hex.name}#{price_log}"
         else
-          @log << "#{entity.name} places a token on #{hex.name} (#{hex.location_name})#{price_log}"
+          @log << "#{tokener} places a token on #{hex.name} (#{hex.location_name})#{price_log}"
         end
 
         @game.graph.clear
+      end
+
+      def pay_token_cost(entity, cost)
+        entity.spend(cost, @game.bank)
       end
 
       def min_token_price(tokens)
@@ -63,7 +72,7 @@ module Engine
 
         prices = tokens.map(&:price)
 
-        token.corporation.abilities(:token) do |ability, _|
+        @game.abilities(token.corporation, :token) do |ability, _|
           prices << ability.price(token)
           prices << ability.teleport_price
         end
@@ -71,13 +80,14 @@ module Engine
         prices.compact.min
       end
 
-      def adjust_token_price_ability!(entity, token, hex, city)
+      def adjust_token_price_ability!(entity, token, hex, city, special_ability = nil)
         if (teleport = @round.teleported?(entity))
           token.price = 0
           return [token, teleport]
         end
 
-        entity.abilities(:token) do |ability, _|
+        @game.abilities(entity, :token) do |ability, _|
+          next if ability.special_only && ability != special_ability
           next if ability.hexes.any? && !ability.hexes.include?(hex.id)
           next if ability.city && ability.city != city.index
 

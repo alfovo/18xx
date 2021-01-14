@@ -12,14 +12,30 @@ module Lib
 
     POINTS = "#{X_R},#{Y_M} #{X_M_R},#{Y_B} #{X_M_L},#{Y_B} #{X_L},#{Y_M} #{X_M_L},#{Y_T} #{X_M_R},#{Y_T}"
 
+    EDGE_PATHS = [
+      "M #{X_M_R},#{Y_B} H #{X_M_L}",
+      "M #{X_M_L},#{Y_B} L #{X_L}, #{Y_M}",
+      "M #{X_L},#{Y_M} #{X_M_L},#{Y_T}",
+      "M #{X_M_L},#{Y_T} H #{X_M_R}",
+      "M #{X_M_R},#{Y_T} L #{X_R},#{Y_M}",
+      "M #{X_R},#{Y_M} L #{X_M_R}, #{Y_B}",
+    ].freeze
+
     COLOR = {
       white: '#EAE0C8',
       yellow: '#fde900',
       green: '#71bf44',
       brown: '#cb7745',
       gray: '#bcbdc0',
+      black: '#000000',
       red: '#ec232a',
       blue: '#35A7FF',
     }.freeze
+
+    def self.points(scale: 1.0)
+      "#{X_R * scale},#{Y_M * scale} #{X_M_R * scale},#{Y_B * scale} "\
+      "#{X_M_L * scale},#{Y_B * scale} #{X_L * scale},#{Y_M * scale} "\
+      "#{X_M_L * scale},#{Y_T * scale} #{X_M_R * scale},#{Y_T * scale}"
+    end
   end
 end

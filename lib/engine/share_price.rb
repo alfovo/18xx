@@ -2,57 +2,66 @@
 
 module Engine
   class SharePrice
-    attr_reader :coordinates, :price, :corporations, :can_par, :type
+    attr_reader :coordinates, :price, :corporations, :can_par, :type, :types
+
+    TYPE_MAP = {
+      'p' => :par,
+      'e' => :endgame,
+      'c' => :close,
+      'b' => :multiple_buy,
+      'o' => :unlimited,
+      'y' => :no_cert_limit,
+      'l' => :liquidation,
+      'a' => :acquisition,
+      'r' => :repar,
+      'i' => :ignore_one_sale,
+      's' => :safe_par,
+      'x' => :par_1,
+      'z' => :par_2,
+      'w' => :par_3,
+      'C' => :convert_range,
+      'm' => :max_price,
+      'u' => :phase_limited,
+    }.freeze
+
+    # Types which are info only and shouldn't
+    NON_HIGHLIGHT_TYPES = %i[par safe_par par_1 par_2 par_3 safe_par convert_range max_price repar].freeze
 
     def self.from_code(code, row, column, unlimited_types, multiple_buy_types: [])
       return nil if !code || code == ''
 
-      price = code.scan(/\d/).join('').to_i
+      m = code.match(/(\d*)([a-zA-Z]*)/)
+      price = m[1].to_i
 
-      type =
-        case code
-        when /p/
-          :par
-        when /e/
-          :endgame
-        when /c/
-          :close
-        when /b/
-          :multiple_buy
-        when /o/
-          :unlimited
-        when /y/
-          :no_cert_limit
-        when /l/
-          :liquidation
-        when /a/
-          :acquisition
-        when /r/
-          :repar
-        when /i/
-          :ignore_one_sale
-        when /s/
-          :safe_par
-        end
+      types = []
+      m[2].chars.each do |char|
+        type = TYPE_MAP[char]
+        types << type
+      end
 
       SharePrice.new([row, column],
                      price: price,
-                     type: type,
+                     types: types,
                      unlimited_types: unlimited_types,
                      multiple_buy_types: multiple_buy_types)
     end
 
     def initialize(coordinates,
                    price:,
-                   type: nil,
+                   types: [],
                    unlimited_types: [],
                    multiple_buy_types: [])
       @coordinates = coordinates
       @price = price
-      @type = type
+      @type = types&.first
+      @types = types
       @corporations = []
       @can_buy_multiple = multiple_buy_types.include?(type)
       @limited = !unlimited_types.include?(type)
+    end
+
+    def ==(other)
+      @coordinates == other.coordinates
     end
 
     def id
@@ -72,7 +81,7 @@ module Engine
     end
 
     def can_par?
-      @type == :par
+      %i[par par_1 par_2 par_3].include?(@type)
     end
 
     def end_game_trigger?
@@ -89,7 +98,7 @@ module Engine
 
     def highlight?
       # Should it be highlighted in corporation/spreadsheet UI
-      @type && !%i[par safe_par].include?(@type)
+      @type && !NON_HIGHLIGHT_TYPES.include?(@type)
     end
 
     def normal_movement?

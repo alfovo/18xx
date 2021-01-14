@@ -1,13 +1,14 @@
 # frozen_string_literal: true
 
 require 'view/game/buy_companies'
-require 'view/game/buy_special'
+require 'view/game/special_buy'
 require 'view/game/buy_trains'
 require 'view/game/company'
 require 'view/game/corporation'
 require 'view/game/player'
 require 'view/game/dividend'
 require 'view/game/issue_shares'
+require 'view/game/corporate_buy_shares'
 require 'view/game/map'
 require 'view/game/route_selector'
 require 'view/game/cash_crisis'
@@ -27,7 +28,7 @@ module View
           entity = entity.owner if entity.company? && !round.active_entities.one?
 
           left = []
-          left << h(BuySpecial) if @current_actions.include?('buy_special')
+          left << h(SpecialBuy) if @current_actions.include?('special_buy')
           left << h(RouteSelector) if @current_actions.include?('run_routes')
           left << h(Dividend) if @current_actions.include?('dividend')
 
@@ -38,6 +39,14 @@ module View
             left << h(CashCrisis)
           elsif @current_actions.include?('buy_shares') || @current_actions.include?('sell_shares')
             left << h(IssueShares)
+          elsif @current_actions.include?('corporate_buy_shares')
+            left << h(CorporateBuyShares)
+          elsif @current_actions.include?('corporate_sell_shares')
+            left << h(CorporateSellShares)
+          elsif @current_actions.include?('choose')
+            left << h(Choose)
+          elsif @current_actions.include?('swap_train')
+            left << h(SwapTrain)
           end
           left << h(Loans, corporation: entity) if (%w[take_loan payoff_loan] & @current_actions).any?
 
@@ -48,7 +57,7 @@ module View
           elsif (company = entity).company?
             left << h(Company, company: company)
 
-            if company.abilities(:assign_corporation)
+            if @game.abilities(company, :assign_corporation)
               props = {
                 style: {
                   display: 'inline-block',

@@ -9,9 +9,11 @@ require 'view/about'
 require 'view/create_game'
 require 'view/invite_game'
 require 'view/home'
+require 'view/confirm'
 require 'view/flash'
 require 'view/game_page'
 require 'view/map_page'
+require 'view/market_page'
 require 'view/navigation'
 require 'view/tiles_page'
 require 'view/user'
@@ -21,7 +23,6 @@ require 'view/reset'
 class App < Snabberb::Component
   include GameManager
   include UserManager
-  needs :disable_user_errors, default: false
   needs :pin, default: nil
 
   def render
@@ -39,6 +40,7 @@ class App < Snabberb::Component
     h(:div, props, [
       h(View::Navigation),
       h(View::Flash),
+      h(View::Confirm),
       render_content,
     ])
   end
@@ -46,7 +48,6 @@ class App < Snabberb::Component
   def render_content
     store(:connection, Lib::Connection.new(root), skip: true) unless @connection
 
-    refresh_user
     js_handlers
 
     needs_consent = @user && !@user.dig('settings', 'consent')
@@ -55,24 +56,26 @@ class App < Snabberb::Component
       case @app_route
       when /new_game/
         h(View::CreateGame)
-      when /[^?](game|hotseat|tutorial)/
+      when /[^?](game|hotseat|tutorial|fixture)/
         render_game
       when /signup/
-        h(View::User, user: @user, type: :signup)
+        h(View::User, type: :signup)
       when /login/
-        h(View::User, user: @user, type: :login)
+        h(View::User, type: :login)
+      when /forgot/
+        h(View::Forgot)
+      when /reset/
+        h(View::Reset)
       when /profile/
         h(View::User, user: @user, type: :profile)
-      when /forgot/
-        h(View::Forgot, user: @user)
-      when /reset/
-        h(View::Reset, user: @user)
       when /about/
         h(View::About)
       when /tiles/
         h(View::TilesPage, route: @app_route)
       when /map/
         h(View::MapPage, route: @app_route)
+      when /market/
+        h(View::MarketPage, route: @app_route)
       else
         h(View::Home, user: @user)
       end
@@ -83,11 +86,13 @@ class App < Snabberb::Component
   end
 
   def render_game
-    match = @app_route.match(%r{(hotseat|game)\/((hs.*_)?\d+)})
+    match = @app_route.match(%r{(hotseat|game|fixture)\/((18.*\/)?(hs.*_)?\d+)})
 
     if !@game_data&.any? # this is a hotseat game
       if @app_route.include?('tutorial')
         enter_tutorial
+      elsif @app_route.include?('fixture')
+        enter_fixture(match[2])
       else
         enter_game(id: match[2], mode: match[1] == 'game' ? :muti : :hotseat, pin: @pin)
       end
@@ -100,7 +105,7 @@ class App < Snabberb::Component
 
     return h('div.padded', 'Loading game...') unless @game_data&.dig('loaded')
 
-    h(View::GamePage, connection: @connection, user: @user, disable_user_errors: @disable_user_errors)
+    h(View::GamePage, connection: @connection, user: @user)
   end
 
   def js_handlers
@@ -114,7 +119,7 @@ class App < Snabberb::Component
 
       var location = window.location
 
-      if (location.pathname + location.hash + location.search != #{@app_route}) {
+      if (location.pathname + location.search + location.hash != #{@app_route}) {
         window.history.pushState(#{@game_data.to_n}, #{@app_route}, #{@app_route})
       }
     }
@@ -127,7 +132,7 @@ class App < Snabberb::Component
   end
 
   def store_app_route(skip: true)
-    window_route = `window.location.pathname + window.location.hash + window.location.search`
+    window_route = `window.location.pathname + window.location.search + window.location.hash`
     store(:app_route, window_route, skip: skip) unless window_route == ''
   end
 end

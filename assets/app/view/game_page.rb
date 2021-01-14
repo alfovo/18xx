@@ -15,30 +15,44 @@ module View
     needs :game, default: nil, store: true
     needs :connection
     needs :selected_company, default: nil, store: true
+    needs :tile_selector, default: nil, store: true
     needs :app_route, store: true
     needs :user
-    needs :disable_user_errors
     needs :connected, default: false, store: true
     needs :before_process_pass, default: -> {}, store: true
 
     def render_broken_game(e)
       inner = [h(:div, "We're sorry this game cannot be continued due to #{e}")]
-      if e.is_a?(Engine::GameError) && !e.action_id.nil?
-        action = e.action_id - 1
-        inner << h(:div, [
-          h(:a, { attrs: { href: "?action=#{action}" } }, "View the last valid action (#{action})"),
-        ])
-      end
+
+      json = `JSON.stringify(#{@game.broken_action&.to_h&.to_n}, null, 2)`
+      inner << h(:div, "Broken action: #{json}")
+
+      # don't ask for a link for hotseat games
+      action = @game.last_processed_action || 0
+      url = "https://18xx.games/game/#{@game_data['id']}?action=#{action + 1}"
+      game_link =
+        if @game.id.is_a?(Integer)
+          [
+            'this link (',
+            h(:a, { attrs: { href: url } }, url),
+            ') and ',
+          ]
+        else
+          []
+        end
+
       inner << h(:div, [
         'Please ',
         h(:a, { attrs: { href: 'https://github.com/tobymao/18xx/issues/' } }, 'raise a bug report'),
-        " and include the game id (#{@game_data['id']}) and the following JSON data",
+        ' and include ',
+        *game_link,
+        'the following JSON data',
       ])
       inner << h(Game::GameData,
                  actions: @game_data['actions'],
                  allow_clone: false,
                  allow_delete: @game_data[:mode] == :hotseat)
-      h(:div, inner)
+      h(:div, { style: { 'margin-bottom': '25px' } }, inner)
     end
 
     def cursor
@@ -50,42 +64,29 @@ module View
       actions = @game_data['actions']
       @num_actions = actions.size
       return if game_id == @game&.id &&
-        ((!cursor && @game.actions.size == @num_actions) || (cursor == @game.actions.size))
+        (@game.exception ||
+         (!cursor && @game.raw_actions.size == @num_actions) ||
+         (cursor == @game.raw_actions.size))
 
-      @game = Engine::GAMES_BY_TITLE[@game_data['title']].new(
-        @game_data['players'].map { |p| p['name'] },
-        id: game_id,
-        actions: cursor ? actions.take(cursor) : actions,
-        pin: @pin,
-        optional_rules: @game_data.dig('settings', 'optional_rules') || [],
-      )
+      @game = Engine::Game.load(@game_data, at_action: cursor)
       store(:game, @game, skip: true)
     end
 
     def render
       @pin = @game_data.dig('settings', 'pin')
 
-      if @disable_user_errors
-        # Opal exceptions lack backtraces, so do this outside of a rescue in dev mode to preserve the backtrace
-        load_game
-      else
-        begin
-          load_game
-        rescue StandardError => e
-          return render_broken_game(e)
-        end
-      end
+      load_game
 
       page =
         case route_anchor
         when nil
           render_game
         when 'map'
-          h(Game::Map, game: @game, opacity: 1.0)
+          h(Game::Map, game: @game, opacity: 1.0, tile_selector: @tile_selector)
         when 'market'
           h(Game::StockMarket, game: @game, explain_colors: true)
         when 'tiles'
-          h(Game::TileManifest, game: @game)
+          h(Game::TileManifest, game: @game, tile_selector: @tile_selector)
         when 'entities'
           h(Game::Entities, game: @game, user: @user)
         when 'info'
@@ -100,7 +101,7 @@ module View
 
       @connection = nil if @game_data[:mode] == :hotseat || cursor
 
-      @connection&.subscribe(game_path, -2) do |data|
+      @connection&.subscribe(game_path) do |data|
         # make sure we're using the newest stored vars
         # since connection is only created on the initial view
         # and views are ephemeral
@@ -113,7 +114,7 @@ module View
           game_data['actions'] << data
           store(:game_data, game_data, skip: true)
           store(:game, game.process_action(data))
-        elsif n_id > o_id
+        else
           store['connection'].get(game_path) do |new_data|
             store(:game_data, new_data, skip: true)
             store(:game, game.clone(new_data['actions']))
@@ -138,10 +139,13 @@ module View
         },
       }
 
-      h(:div, props, [
+      children = [
         menu,
         page,
-      ])
+      ]
+      children.unshift(render_broken_game(@game.exception)) if @game.exception
+
+      h(:div, props, children)
     end
 
     def game_path
@@ -152,7 +156,7 @@ module View
 
     def render_title
       title = "#{@game.class.title} - #{@game.id} - 18xx.Games"
-      title = "* #{title}" if @game.active_player_names.include?(@user&.dig('name'))
+      title = "* #{title}" if @game.active_players_id.include?(@user&.dig('id'))
       `document.title = #{title}`
       change_favicon(active_player)
       change_tab_color(active_player)
@@ -161,11 +165,17 @@ module View
     def active_player
       @game_data[:mode] != :hotseat &&
         !cursor &&
-        @game.active_players.map(&:name).include?(@user&.dig('name'))
+        @game.active_players_id.include?(@user&.dig('id'))
     end
 
     def menu
-      bg_color = active_player ? color_for(:your_turn) : color_for(:bg2)
+      bg_color =  if @game_data['mode'] == :hotseat
+                    color_for(:hotseat_game)
+                  elsif active_player
+                    color_for(:your_turn)
+                  else
+                    color_for(:bg2)
+                  end
       nav_props = {
         attrs: {
           role: 'navigation',
@@ -203,6 +213,7 @@ module View
 
     def item(name, anchor = '')
       change_anchor = lambda do
+        store(:tile_selector, nil, skip: true)
         store(:app_route, "#{@app_route.split('#').first}#{anchor}")
       end
 
@@ -230,7 +241,8 @@ module View
     end
 
     def render_round
-      description = "#{@game.class.title}: "
+      description = @game_data['mode'] == :hotseat ? '[HOTSEAT] ' : ''
+      description += "#{@game.class.title}: "
       name = @round.class.name.split(':').last
       description += @game.round_description(name)
       description += @game.finished ? ' - Game Over' : " - #{@round.description}"
@@ -243,19 +255,22 @@ module View
     def render_action
       return h(Game::GameEnd) if @game.finished
 
-      entity = @round.active_step.current_entity
-      current_actions = @round.actions_for(entity) || []
-      return h(Game::DiscardTrains) if current_actions.include?('discard_train')
+      return h(Game::DiscardTrains) if current_entity_actions.include?('discard_train')
+
+      if current_entity_actions.include?('par') &&
+          step.respond_to?(:corporation_pending_par) && step.corporation_pending_par
+        return h(Game::CorporationPendingPar, corporation: step.corporation_pending_par)
+      end
 
       case @round
       when Engine::Round::Stock
-        if (%w[place_token lay_tile] & current_actions).any?
+        if !(%w[place_token lay_tile remove_token] & current_entity_actions).empty?
           h(Game::Map, game: @game)
         else
           h(Game::Round::Stock, game: @game)
         end
       when Engine::Round::Operating
-        if current_actions.include?('merge')
+        if current_entity_actions.include?('merge')
           h(Game::Round::Merger, game: @game)
         else
           h(Game::Round::Operating, game: @game)
@@ -275,13 +290,21 @@ module View
       h('div.game', [
         render_round,
         h(Game::GameLog, user: @user),
-        h(Game::HistoryControls, num_actions: @num_actions),
+        h(Game::HistoryAndUndo, num_actions: @num_actions),
         h(Game::EntityOrder, round: @round),
         h(Game::Abilities, user: @user, game: @game),
-        h(Game::UndoAndPass, before_process_pass: @before_process_pass),
+        h(Game::Pass, before_process_pass: @before_process_pass, actions: current_entity_actions),
         h(Game::Help, game: @game),
         render_action,
       ])
+    end
+
+    def current_entity_actions
+      @current_entity_actions ||= @game.round.actions_for(@game.round.active_step&.current_entity) || []
+    end
+
+    def step
+      @game.round.active_step
     end
   end
 end

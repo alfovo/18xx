@@ -3,6 +3,7 @@
 # frozen_string_literal: true
 
 require_relative '../config/game/g_1846'
+require_relative 'company_price_up_to_face'
 require_relative 'base'
 
 module Engine
@@ -35,6 +36,7 @@ module Engine
       MUST_EMERGENCY_ISSUE_BEFORE_EBUY = true
       HOME_TOKEN_TIMING = :float
       MUST_BUY_TRAIN = :always
+      CERT_LIMIT_COUNTS_BANKRUPTED = true
 
       ORANGE_GROUP = [
         'Lake Shore Line',
@@ -71,7 +73,7 @@ module Engine
       MEAT_REVENUE_DESC = 'Meat-Packing'
 
       TILE_COST = 20
-      EVENTS_TEXT = Base::EVENTS_TEXT.merge('remove_tokens' => ['Remove Tokens', 'Remove private company tokens']).freeze
+      EVENTS_TEXT = Base::EVENTS_TEXT.merge('remove_tokens' => ['Remove Tokens', 'Remove Steamboat and Meat Packing markers']).freeze
 
       ASSIGNMENT_TOKENS = {
         'MPC' => '/icons/1846/mpc_token.svg',
@@ -81,7 +83,9 @@ module Engine
       # Two tiles can be laid, only one upgrade
       TILE_LAYS = [{ lay: true, upgrade: true }, { lay: true, upgrade: :not_if_upgraded }].freeze
 
-      IPO_NAME = 'Treasury'
+      def ipo_name(_entity = nil)
+        'Treasury'
+      end
 
       def corporation_opts
         two_player? ? { max_ownership_percent: 70 } : {}
@@ -104,35 +108,7 @@ module Engine
         two_player? ? 0 : players.size
       end
 
-      def cert_limit
-        num_corps = @corporations.size
-        case @players.size
-        when 2
-          num_corps == 5 ? 19 : 16
-        when 3
-          num_corps == 5 ? 14 : 11
-        when 4
-          case num_corps
-          when 6
-            12
-          when 5
-            10
-          else
-            8
-          end
-        when 5
-          case num_corps
-          when 7
-            11
-          when 6
-            10
-          when 5
-            8
-          else
-            6
-          end
-        end
-      end
+      include CompanyPriceUpToFace
 
       def setup
         @turn = setup_turn
@@ -157,23 +133,23 @@ module Engine
         corporation_removal_groups.each do |group|
           remove_from_group!(group, @corporations) do |corporation|
             place_home_token(corporation)
-            corporation.abilities(:reservation) do |ability|
+            abilities(corporation, :reservation) do |ability|
               corporation.remove_ability(ability)
             end
             place_second_token(corporation)
           end
         end
 
-        @companies.each do |company|
-          company.min_price = 1
-          company.max_price = company.value
-        end
+        @cert_limit = init_cert_limit
+
+        setup_company_price_up_to_face
+
         @draft_finished = false
 
         @minors.each do |minor|
           train = @depot.upcoming[0]
           train.buyable = false
-          minor.buy_train(train, :free)
+          buy_train(minor, train, :free)
           hex = hex_by_id(minor.coordinates)
           hex.tile.cities[0].place_token(minor, minor.next_token, free: true)
         end
@@ -200,6 +176,19 @@ module Engine
             false
           end
         end
+      end
+
+      def operating_order
+        corporations = @corporations.select(&:floated?)
+        if @turn == 1 && (@round_num || 1) == 1
+          corporations.sort_by! do |c|
+            sp = c.share_price
+            [sp.price, sp.corporations.find_index(c)]
+          end
+        else
+          corporations.sort!
+        end
+        @minors.select(&:floated?) + corporations
       end
 
       def num_removals(_group)
@@ -326,6 +315,10 @@ module Engine
         @illinois_central ||= corporation_by_id('IC')
       end
 
+      def preprocess_action(action)
+        check_special_tile_lay(action) unless psuedo_special_tile_lay?(action)
+      end
+
       def action_processed(action)
         case action
         when Action::Par
@@ -339,9 +332,7 @@ module Engine
 
         check_special_tile_lay(action)
 
-        @corporations.dup.each do |corporation|
-          close_corporation(corporation) if corporation.share_price&.price&.zero?
-        end
+        super
 
         @last_action = action
       end
@@ -351,47 +342,19 @@ module Engine
          (action.entity == michigan_central || action.entity == ohio_indiana))
       end
 
+      def psuedo_special_tile_lay?(action)
+        (action.is_a?(Action::LayTile) &&
+         (action.entity == michigan_central&.owner || action.entity == ohio_indiana&.owner))
+      end
+
       def check_special_tile_lay(action)
         company = @last_action&.entity
         return unless special_tile_lay?(@last_action)
-        return unless (ability = company.abilities(:tile_lay))
+        return unless (ability = abilities(company, :tile_lay))
         return if action.entity == company
 
         company.remove_ability(ability)
         @log << "#{company.name} forfeits second tile lay."
-      end
-
-      def close_corporation(corporation, quiet: false)
-        @log << "#{corporation.name} closes" unless quiet
-
-        hexes.each do |hex|
-          hex.tile.cities.each do |city|
-            if city.tokened_by?(corporation) || city.reserved_by?(corporation)
-              city.tokens.map! { |token| token&.corporation == corporation ? nil : token }
-              city.reservations.delete(corporation)
-            end
-          end
-        end
-
-        corporation.spend(corporation.cash, @bank) if corporation.cash.positive?
-        corporation.trains.each { |t| t.buyable = false }
-        if corporation.companies.any?
-          @log << "#{corporation.name}'s companies close: #{corporation.companies.map(&:sym).join(', ')}"
-          corporation.companies.dup.each(&:close!)
-        end
-        @round.force_next_entity! if @round.current_entity == corporation
-
-        if corporation.corporation?
-          corporation.share_holders.keys.each do |share_holder|
-            share_holder.shares_by_corporation.delete(corporation)
-          end
-
-          @share_pool.shares_by_corporation.delete(corporation)
-          corporation.share_price.corporations.delete(corporation)
-          @corporations.delete(corporation)
-        else
-          @minors.delete(corporation)
-        end
       end
 
       def init_round
@@ -419,9 +382,9 @@ module Engine
       end
 
       def operating_round(round_num)
+        @round_num = round_num
         Round::G1846::Operating.new(self, [
           Step::G1846::Bankrupt,
-          Step::DiscardTrain,
           Step::G1846::Assign,
           Step::SpecialToken,
           Step::SpecialTrack,
@@ -430,12 +393,13 @@ module Engine
           Step::G1846::TrackAndToken,
           Step::Route,
           Step::G1846::Dividend,
+          Step::DiscardTrain,
           Step::G1846::BuyTrain,
           [Step::G1846::BuyCompany, blocks: true],
         ], round_num: round_num)
       end
 
-      def tile_cost(tile, entity)
+      def upgrade_cost(tile, hex, entity)
         [TILE_COST, super].max
       end
 
@@ -594,6 +558,52 @@ module Engine
             values[:final_train] = :one_more_full_or_set if two_player?
             values
           end
+      end
+
+      def east_west_desc
+        'E/W'
+      end
+
+      def train_help(runnable_trains)
+        help = []
+
+        nm_trains = runnable_trains.select { |t| t.name.include?('/') }
+
+        if nm_trains.any?
+          corporation = nm_trains.first.owner
+          trains = nm_trains.map(&:name).uniq.sort.join(', ')
+          help << "N/M trains (#{trains}) may visit M locations, but only "\
+                  'earn revenue from the best combination of N locations.'
+          help << "One of the N locations must include a #{corporation.name} "\
+                  'token.'
+          help << 'In order for an N/M train to earn bonuses for an '\
+                  "#{east_west_desc} route, both of the #{east_west_desc} "\
+                  'locations must be counted among the N locations.'
+        end
+
+        help
+      end
+
+      def potential_minor_cash(entity, allowed_trains: (0..3))
+        if entity.corporation? && entity.cash.positive? && allowed_trains.include?(entity.trains.size)
+          @minors.reduce(0) do |memo, minor|
+            minor.owned_by_player? && minor.cash.positive? ? memo + minor.cash - 1 : memo
+          end
+        else
+          0
+        end
+      end
+
+      def track_buying_power(entity)
+        buying_power(entity) + potential_minor_cash(entity)
+      end
+
+      def train_buying_power(entity)
+        buying_power(entity) + potential_minor_cash(entity, allowed_trains: (1..2))
+      end
+
+      def ability_time_is_or_start?
+        active_step.is_a?(Step::G1846::Assign) || super
       end
     end
   end

@@ -10,6 +10,7 @@ module Engine
       @connected_nodes = {}
       @connected_paths = {}
       @reachable_hexes = {}
+      @tokenable_cities = {}
       @routes = {}
       @tokens = {}
     end
@@ -19,6 +20,7 @@ module Engine
       @connected_nodes.clear
       @connected_paths.clear
       @reachable_hexes.clear
+      @tokenable_cities.clear
       @tokens.clear
       @routes.delete_if do |_, route|
         !route[:route_train_purchase]
@@ -37,7 +39,7 @@ module Engine
     end
 
     def route_info(corporation)
-      compute(corporation) unless @routes[corporation]
+      compute(corporation, routes_only: true) unless @routes[corporation]
       @routes[corporation]
     end
 
@@ -52,6 +54,19 @@ module Engine
       end
       @tokens[corporation] ||= false
       @tokens[corporation]
+    end
+
+    def tokenable_cities(corporation)
+      # A list of all tokenable cities per corporation
+      return @tokenable_cities[corporation] if @tokenable_cities.key?(corporation)
+
+      cities = []
+      compute(corporation) do |node|
+        cities << node if node.tokenable?(corporation, free: true)
+      end
+
+      @tokenable_cities[corporation] = cities if cities.any?
+      cities
     end
 
     def connected_hexes(corporation)
@@ -74,7 +89,7 @@ module Engine
       @reachable_hexes[corporation]
     end
 
-    def compute(corporation)
+    def compute(corporation, routes_only: false)
       hexes = Hash.new { |h, k| h[k] = {} }
       nodes = {}
       paths = {}
@@ -90,7 +105,7 @@ module Engine
 
       tokens = nodes.dup
 
-      corporation.abilities(:token) do |ability, c|
+      @game.abilities(corporation, :token) do |ability, c|
         next unless c == corporation # Private company token ability uses round/special.rb.
         next unless ability.teleport_price
 
@@ -102,7 +117,7 @@ module Engine
         end
       end
 
-      corporation.abilities(:teleport) do |ability, _|
+      @game.abilities(corporation, :teleport) do |ability, _|
         ability.hexes.each do |hex_id|
           hex = @game.hex_by_id(hex_id)
           hex.neighbors.each { |e, _| hexes[hex][e] = true }
@@ -113,8 +128,11 @@ module Engine
         end
       end
 
-      routes = {}
+      routes = @routes[corporation] || {}
+
       tokens.keys.each do |node|
+        return nil if routes[:route_train_purchase] && routes_only
+
         visited = tokens.reject { |token, _| token == node }
         local_nodes = {}
 
@@ -134,6 +152,8 @@ module Engine
           end
         end
 
+        next if routes[:route_train_purchase]
+
         mandatory_nodes = 0
         optional_nodes = 0
         local_nodes.each do |p_node, _|
@@ -148,6 +168,7 @@ module Engine
         if mandatory_nodes > 1
           routes[:route_available] = true
           routes[:route_train_purchase] = true
+          @routes[corporation] = routes
         elsif mandatory_nodes == 1 && optional_nodes.positive?
           routes[:route_available] = true
         end
@@ -156,10 +177,10 @@ module Engine
       hexes.default = nil
       hexes.transform_values!(&:keys)
 
+      @routes[corporation] = routes
       @connected_hexes[corporation] = hexes
       @connected_nodes[corporation] = nodes
       @connected_paths[corporation] = paths
-      @routes[corporation] = routes
       @reachable_hexes[corporation] = paths.map { |path, _| [path.hex, true] }.to_h
     end
   end

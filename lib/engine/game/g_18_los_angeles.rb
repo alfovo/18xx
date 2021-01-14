@@ -4,12 +4,22 @@ require_relative 'g_1846'
 require_relative '../config/game/g_1846'
 require_relative '../config/game/g_18_los_angeles'
 require_relative '../step/g_18_los_angeles/draft_distribution'
-require_relative '../step/g_18_los_angeles/route'
 require_relative '../step/g_18_los_angeles/special_token'
+require_relative 'stubs_are_restricted'
 
 module Engine
   module Game
     class G18LosAngeles < G1846
+      register_colors(red: '#ff0000',
+                      pink: '#ff7fed',
+                      orange: '#ff6a00',
+                      green: '#00830e',
+                      blue: '#0026ff',
+                      black: '#727272',
+                      lightBlue: '#b8ffff',
+                      brown: '#644c00',
+                      purple: '#832e9a')
+
       load_from_json(Config::Game::G18LosAngeles::JSON, Config::Game::G1846::JSON)
 
       DEV_STAGE = :production
@@ -70,6 +80,12 @@ module Engine
       STEAMBOAT_HEXES = %w[B1 C2 F7 F9].freeze
 
       MEAT_REVENUE_DESC = 'Citrus'
+
+      EVENTS_TEXT = G1846::EVENTS_TEXT.merge(
+        'remove_tokens' => ['Remove Tokens', 'Remove LA Steamship and LA Citrus tokens']
+      ).freeze
+
+      include StubsAreRestricted
 
       def self.title
         '18 Los Angeles'
@@ -132,17 +148,18 @@ module Engine
       end
 
       def operating_round(round_num)
+        @round_num = round_num
         Round::G1846::Operating.new(self, [
           Step::G1846::Bankrupt,
-          Step::DiscardTrain,
-          Step::G1846::Assign,
+          Step::Assign,
           Step::G18LosAngeles::SpecialToken,
           Step::SpecialTrack,
           Step::G1846::BuyCompany,
           Step::G1846::IssueShares,
           Step::G1846::TrackAndToken,
-          Step::G18LosAngeles::Route,
+          Step::Route,
           Step::G1846::Dividend,
+          Step::DiscardTrain,
           Step::G1846::BuyTrain,
           [Step::G1846::BuyCompany, blocks: true],
         ], round_num: round_num)
@@ -201,10 +218,6 @@ module Engine
       # unlike in 1846, none of the private companies get 2 tile lays
       def check_special_tile_lay(_action); end
 
-      def legal_tile_rotation?(_entity, hex, tile)
-        hex.tile.stubs.empty? || tile.exits.include?(hex.tile.stubs.first.edge)
-      end
-
       def east_west_bonus(stops)
         bonus = { revenue: 0 }
 
@@ -252,7 +265,7 @@ module Engine
 
         tracks_by_type.each do |_type, tracks|
           tracks.group_by(&:itself).each do |k, v|
-            @game.game_error("Route cannot reuse track on #{k[0].id}") if v.size > 1
+            raise GameError, "Route cannot reuse track on #{k[0].id}" if v.size > 1
           end
         end
       end
@@ -277,6 +290,25 @@ module Engine
             init_round_finished
             new_stock_round
           end
+      end
+
+      def train_help(runnable_trains)
+        trains = runnable_trains.group_by { |t| train_type(t) }
+
+        help = []
+
+        if trains.keys.size > 1
+          passenger_trains = trains[:passenger].map(&:name).uniq.sort.join(', ')
+          freight_trains = trains[:freight].map(&:name).uniq.sort.join(', ')
+          help << "The routes of N trains (#{passenger_trains}) may overlap "\
+                  "with the routes of N/M trains (#{freight_trains})."
+        end
+
+        super + help
+      end
+
+      def east_west_desc
+        'E/W or N/S'
       end
     end
   end

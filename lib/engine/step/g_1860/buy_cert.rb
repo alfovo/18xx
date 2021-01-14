@@ -9,13 +9,13 @@ module Engine
       class BuyCert < Base
         attr_reader :companies
 
-        ALL_ACTIONS = %w[bid pass par].freeze
         AUCTION_ACTIONS = %w[bid pass].freeze
+        BUY_ACTION = %w[bid par].freeze
         PASS_ACTION = %w[pass].freeze
         MIN_BID_RAISE = 5
 
         def setup
-          @companies = @game.companies.select { |c| c.abilities(:exchange) }.sort +
+          @companies = @game.companies.select { |c| @game.abilities(c, :exchange) }.sort +
             @game.corporations.select { |c| @game.corp_layer(c) == 1 }
           @bids = {}
           setup_auction
@@ -60,7 +60,7 @@ module Engine
         def actions(entity)
           return [] if finished?
           return [] unless entity == current_entity
-          return ALL_ACTIONS unless in_auction?
+          return BUY_ACTION unless in_auction?
           return AUCTION_ACTIONS if min_player_bid + cheapest_price <= entity.cash
 
           PASS_ACTION
@@ -70,7 +70,7 @@ module Engine
           share_price = action.share_price
           corporation = action.corporation
           entity = action.entity
-          @game.game_error("#{corporation} cannot be parred") unless corporation.can_par?(entity)
+          raise GameError, "#{corporation} cannot be parred" unless @game.can_par?(corporation, entity)
 
           @game.stock_market.set_par(corporation, share_price)
           shares = corporation.shares.first
@@ -102,8 +102,10 @@ module Engine
             buy_company(player, action.company, price)
           else
             if price > max_player_bid(player)
-              @game.game_error("Cannot afford bid. Maximum possible bid is #{max_player_bid(player)}")
+              raise GameError, "Cannot afford bid. Maximum possible bid is #{max_player_bid(player)}"
             end
+
+            raise GameError, "Must bid at least #{min_player_bid}" if price < min_player_bid
 
             @log << "#{player.name} bids #{@game.format_currency(price)}"
 
@@ -243,7 +245,7 @@ module Engine
           share_str = "a #{bundle.percent}% share of #{corporation.name}"
 
           @log << "#{entity.name} buys #{share_str} "\
-            "from the #{@game.class::IPO_NAME} "\
+            "from the #{@game.ipo_name(corporation)} "\
             "for #{@game.format_currency(discounted_price)}"
 
           @game.share_pool.transfer_shares(

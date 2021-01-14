@@ -3,7 +3,7 @@
 module Engine
   class Token
     attr_reader :corporation, :logo
-    attr_accessor :city, :price, :type, :used
+    attr_accessor :city, :price, :type, :used, :status
 
     def initialize(corporation, price: 0, logo: nil, type: :normal)
       @corporation = corporation
@@ -12,6 +12,7 @@ module Engine
       @used = false
       @type = type
       @city = nil
+      @status = nil
     end
 
     def destroy!
@@ -25,13 +26,13 @@ module Engine
       @used = false
     end
 
-    def swap!(other_token)
+    def swap!(other_token, check_tokenable: true)
       city = @city
       remove!
       corporation = other_token.corporation
-      return unless city.tokenable?(corporation, free: true, tokens: [other_token])
+      return if check_tokenable && !city.tokenable?(corporation, free: true, tokens: [other_token])
 
-      city.place_token(corporation, other_token)
+      city.place_token(corporation, other_token, check_tokenable: check_tokenable)
     end
 
     def move!(new_city)

@@ -11,48 +11,15 @@ module Engine
   module Abilities
     def init_abilities(abilities)
       @abilities = []
-      @start_count = nil
 
       (abilities || []).each do |ability|
         klass = Ability::Base.type(ability[:type])
         ability = Object.const_get("Engine::Ability::#{klass}").new(**ability)
         ability.owner = self
         @abilities << ability
-        next unless ability.start_count
-
-        @start_count = ability.start_count
-      end
-    end
-
-    def abilities(type, time = nil)
-      active_abilities = @abilities.select do |ability|
-        next false unless ability.type == type
-
-        next false if time && ability.when && (ability.when != time.to_s)
-
-        usable_this_or = !ability.count_per_or || (ability.count_this_or < ability.count_per_or)
-        next false unless usable_this_or
-
-        correct_owner_type =
-          case ability.owner_type
-          when :player
-            !owner || owner.player?
-          when :corporation
-            owner&.corporation?
-          when nil
-            true
-          end
-        next false unless correct_owner_type
-
-        true
       end
 
-      active_abilities.each { |ability| yield ability } if block_given?
-
-      return nil if active_abilities.none?
-      return active_abilities.first if active_abilities.one?
-
-      active_abilities
+      @start_count = @abilities.map(&:start_count).compact.max
     end
 
     def add_ability(ability)
@@ -83,8 +50,8 @@ module Engine
       return unless @start_count
 
       count = [0, @start_count]
-      # This assumes that only one ability per company has multiple uses
-      # and the ability never separates from the entity
+      # Shows the ability with the most uses. Assumes
+      # the ability never separates from the entity
       @abilities.each do |a|
         count = [a.count, a.start_count] if a.start_count
       end

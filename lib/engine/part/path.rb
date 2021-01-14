@@ -6,7 +6,11 @@ module Engine
   module Part
     class Path < Base
       attr_reader :a, :b, :city, :edges, :exit_lanes, :junction,
-                  :lanes, :nodes, :offboard, :stops, :terminal, :town
+                  :lanes, :nodes, :offboard, :stops, :terminal, :town, :track
+
+      LANES = [[1, 0].freeze, [1, 0].freeze].freeze
+      MATCHES_BROAD = %i[broad dual].freeze
+      MATCHES_NARROW = %i[narrow dual].freeze
 
       def self.decode_lane_spec(x_lane)
         if x_lane
@@ -16,7 +20,8 @@ module Engine
         end
       end
 
-      def self.make_lanes(a, b, terminal: nil, lanes: nil, a_lane: nil, b_lane: nil)
+      def self.make_lanes(a, b, terminal: nil, lanes: nil, a_lane: nil, b_lane: nil, track: nil)
+        track ||= :broad
         if lanes
           lanes.times.map do |index|
             a_lanes = [lanes, index]
@@ -25,14 +30,20 @@ module Engine
                       else
                         a_lanes
                       end
-            Path.new(a, b, terminal, [a_lanes, b_lanes])
+            Path.new(a, b,
+                     terminal: terminal,
+                     lanes: [a_lanes, b_lanes],
+                     track: track)
           end
         else
-          Path.new(a, b, terminal, [decode_lane_spec(a_lane), decode_lane_spec(b_lane)])
+          Path.new(a, b,
+                   terminal: terminal,
+                   lanes: [decode_lane_spec(a_lane), decode_lane_spec(b_lane)],
+                   track: track)
         end
       end
 
-      def initialize(a, b, terminal = nil, lanes = [[1, 0], [1, 0]])
+      def initialize(a, b, terminal: nil, lanes: LANES, track: :broad)
         @a = a
         @b = b
         @terminal = terminal
@@ -41,6 +52,7 @@ module Engine
         @stops = []
         @nodes = []
         @exit_lanes = {}
+        @track = track
 
         separate_parts
       end
@@ -51,7 +63,19 @@ module Engine
 
       def <=(other)
         other_ends = other.ends
-        ends.all? { |t| other_ends.any? { |o| t <= o } }
+        ends.all? { |t| other_ends.any? { |o| t <= o } } && tracks_match?(other)
+      end
+
+      def tracks_match?(other_path, dual_ok: false)
+        other_track = other_path.track
+        case @track
+        when :broad
+          MATCHES_BROAD.include?(other_track)
+        when :narrow
+          MATCHES_NARROW.include?(other_track)
+        when :dual
+          dual_ok || other_track == :dual
+        end
       end
 
       def ends
@@ -111,6 +135,7 @@ module Engine
           neighbor.paths[np_edge].each do |np|
             next if on && !on[np]
             next unless lane_match?(@exit_lanes[edge], np.exit_lanes[np_edge])
+            next unless tracks_match?(np, dual_ok: true)
 
             if chain
               np.walk(skip: np_edge, visited: visited, chain: chained) { |c| yield c }
@@ -180,7 +205,10 @@ module Engine
       end
 
       def rotate(ticks)
-        path = Path.new(@a.rotate(ticks), @b.rotate(ticks), @terminal, @lanes)
+        path = Path.new(@a.rotate(ticks), @b.rotate(ticks),
+                        terminal: @terminal,
+                        lanes: @lanes,
+                        track: @track)
         path.index = index
         path.tile = @tile
         path
@@ -189,7 +217,7 @@ module Engine
       def inspect
         name = self.class.name.split('::').last
         if single?
-          "<#{name}: hex: #{hex&.name}, exit: #{exits}>"
+          "<#{name}: hex: #{hex&.name}, exit: #{exits}, track: #{track}>"
         else
           "<#{name}: hex: #{hex&.name}, exit: #{exits}, lanes: #{@lanes.first} #{@lanes.last}>"
         end

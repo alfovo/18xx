@@ -33,13 +33,13 @@ module Engine
         Round::Operating.new(self, [
           Step::Bankrupt,
           Step::Exchange,
-          Step::DiscardTrain,
           Step::G1889::SpecialTrack,
           Step::BuyCompany,
           Step::Track,
           Step::Token,
           Step::Route,
           Step::Dividend,
+          Step::DiscardTrain,
           Step::BuyTrain,
           [Step::BuyCompany, blocks: true],
         ], round_num: round_num)
@@ -48,7 +48,8 @@ module Engine
       def active_players
         return super if @finished
 
-        current_entity == company_by_id('ER') ? [@round.company_seller] : super
+        company = company_by_id('ER')
+        current_entity == company ? [@round.company_sellers[company]] : super
       end
     end
   end

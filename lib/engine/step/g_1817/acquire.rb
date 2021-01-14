@@ -2,8 +2,8 @@
 
 require_relative '../base'
 require_relative '../../token'
-require_relative 'passable_auction'
-require_relative 'token_merger'
+require_relative '../passable_auction'
+require_relative '../token_merger'
 
 module Engine
   module Step
@@ -12,9 +12,10 @@ module Engine
         include PassableAuction
         include TokenMerger
 
-        attr_reader :auctioning, :last_president
+        attr_reader :auctioning, :last_president, :buyer
 
         def actions(entity)
+          return [] if entity.company?
           return %w[assign pass] if @offer
           return %w[bid pass] if @auctioning
           return %w[take_loan pass] if can_take_loan?(entity)
@@ -24,6 +25,10 @@ module Engine
           actions << 'merge' if @winner&.entity == entity
 
           actions
+        end
+
+        def merge_name
+          'Acquire'
         end
 
         def description
@@ -47,13 +52,14 @@ module Engine
         end
 
         def can_payoff?(entity)
-          entity == @buyer && @unpaid_loans.positive? && @buyer.cash >= @game.loan_value && !@passed_payoff_loans
+          # Parens are to workaround an Opal bug
+          (entity == @buyer) && @unpaid_loans.positive? && @buyer.cash >= @game.loan_value && !@passed_payoff_loans
         end
 
         def active_entities
           # Double check that a cash crisis hasn't just been resolved, as the corp may now be in liquidation.
-          if auctioning_corporation && corporation_entered_acquisition_this_round?(auctioning_corporation)
-            @game.log << "#{auctioning_corporation.name} is no longer eligable to be auctioned"
+          if !@buyer && auctioning_corporation && corporation_entered_acquisition_this_round?(auctioning_corporation)
+            @game.log << "#{auctioning_corporation.name} is no longer eligible to be auctioned"
             @round.offering.delete(auctioning_corporation)
             @offer = nil
             setup_auction
@@ -75,12 +81,20 @@ module Engine
                 end
 
               players = @game.players.rotate((@game.players.index(owner) + 1) % @game.players.size)
-              [players.find { |p| @active_bidders.include?(p) }]
+              player = players.find { |p| @active_bidders.include?(p) }
+              if player.bankrupt
+                pass_auction(player)
+                active_entities
+              else
+                [player]
+              end
             end
           elsif @buyer
             [@buyer]
           elsif @winner
             [@winner.entity]
+          else
+            []
           end
         end
 
@@ -91,7 +105,7 @@ module Engine
         end
 
         def show_other_players
-          false
+          true
         end
 
         def process_payoff_loan(action)
@@ -177,16 +191,15 @@ module Engine
         end
 
         def process_acquire(buyer)
-          @buyer = buyer
           acquired_corp = @winner.corporation
 
           if !buyer || !mergeable(acquired_corp).include?(buyer)
-            @game.game_error("Choose a corporation to acquire #{acquired_corp.name}")
+            raise GameError, "Choose a corporation to acquire #{acquired_corp.name}"
           end
 
-          if buyer.owner != @winner.entity
-            @game.game_error("Target corporation must be owned by #{@winner.entity.name}")
-          end
+          raise GameError, "Target corporation must be owned by #{@winner.entity.name}" if buyer.owner != @winner.entity
+
+          @buyer = buyer
 
           receiving = []
 
@@ -203,19 +216,19 @@ module Engine
           end
           @liquidation_cash += @winner.price if acquired_corp.share_price.liquidation?
           @shareholder_cash = @winner.price
-          companies = acquired_corp.transfer(:companies, buyer).map(&:name)
+          companies = @game.transfer(:companies, acquired_corp, buyer).map(&:name)
           receiving << "companies (#{companies.join(', ')})" if companies.any?
 
-          @unpaid_loans = acquired_corp.transfer(:loans, buyer).size
+          @unpaid_loans = @game.transfer(:loans, acquired_corp, buyer).size
           receiving << "loans (#{@unpaid_loans})" if @unpaid_loans.positive?
           # share price modification is delayed until after the player has passed paying off loans
 
-          trains = acquired_corp.transfer(:trains, buyer).map(&:name)
+          trains = @game.transfer(:trains, acquired_corp, buyer).map(&:name)
           receiving << "trains (#{trains})" if trains.any?
 
           remove_duplicate_tokens(buyer, acquired_corp)
           if tokens_above_limits?(buyer, acquired_corp)
-            @game.log << "#{buyer.name} will be above token limit and must decide which tokens to keep"
+            @game.log << "#{buyer.name} will be above token limit and must decide which tokens to remove"
             @round.corporations_removing_tokens = [buyer, acquired_corp]
           else
             tokens = move_tokens_to_surviving(buyer, acquired_corp)
@@ -295,7 +308,7 @@ module Engine
 
               @shareholder_cash = 0
             elsif loan_value.positive?
-              unless president == @game.share_pool
+              if president != @game.share_pool && @buyer
                 @game.log << "#{@buyer.name} settles #{acquired_corp.name} loans for "\
                 "#{@game.format_currency(loan_value)}"
               end
@@ -367,7 +380,7 @@ module Engine
 
         def mergeable(corporation)
           return [] if corporation.player?
-          return [] if @offer
+          return [] if @offer || @buyer
           return mergeable_by_entity(current_entity, corporation, min_bid(corporation)) unless @winner
 
           mergeable_by_entity(@winner.entity, corporation, @winner.price)
@@ -400,7 +413,7 @@ module Engine
           # Notionally pay off all the acquired corps loans, and then they can be taken again
           loan_payoff = acquired_corp.loans.size * @game.loan_value
 
-          @game.buying_power(corporation) +
+          @game.buying_power(corporation, extra_loans: acquired_corp.loans.size) +
           acquired_corp.cash +
           treasury_share_compensation(acquired_corp) -
           loan_payoff
@@ -423,7 +436,8 @@ module Engine
           corporation = action.corporation
           price = action.price
 
-          @game.game_error("Bid #{price} is not a multple of 10") unless (price % 10).zero?
+          raise GameError, "Bid #{price} is not a multple of 10" unless (price % 10).zero?
+
           @log << "#{entity.name} bids #{@game.format_currency(price)} for #{corporation.name}"
           add_bid(action)
           resolve_bids
@@ -431,8 +445,8 @@ module Engine
 
         def process_assign(action)
           corporation = action.target
-          @game.game_error("Can only assign if offering for sale #{corporation.name}") unless @mode == :offered
-          @game.game_error("Can only offer up #{@offer.name}") unless corporation == @offer
+          raise GameError, "Can only assign if offering for sale #{corporation.name}" unless @mode == :offered
+          raise GameError, "Can only offer up #{@offer.name}" unless corporation == @offer
 
           @game.log << "#{corporation.name} is offered at auction, buying corporation will receive "\
             "#{@game.format_currency(treasury_share_compensation(corporation))} for treasury shares"
@@ -441,7 +455,7 @@ module Engine
         end
 
         def auctioning_corporation
-          @offer || @auctioning || @winner.corporation
+          @offer || @buyer || @auctioning || @winner&.corporation
         end
 
         def setup
@@ -494,7 +508,7 @@ module Engine
 
           else
             # This needs the owner to either offer(assign) or pass up putting the corp for sale.
-
+            @mode = :offered
             # Check to see if any players can actually buy it
             bidders = entities.select do |player|
               max_bid(player, corporation) >= min_bid(corporation)
@@ -504,7 +518,6 @@ module Engine
               @game.log << "#{corporation.name} may be offered for sale for "\
                 "#{@game.format_currency(starting_bid(corporation))}"
               @offer = corporation
-              @mode = :offered
             else
               @game.log << "#{corporation.name} cannot be bought at "\
                 "#{@game.format_currency(starting_bid(corporation))}, skipping"

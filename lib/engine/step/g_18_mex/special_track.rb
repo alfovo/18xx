@@ -8,7 +8,7 @@ module Engine
       class SpecialTrack < SpecialTrack
         COPPER_CANYON = '470'
 
-        def tile_lay_abilities(entity)
+        def tile_lay_abilities(entity, **_kwargs)
           ability = super
 
           ability if ability &&
@@ -19,7 +19,11 @@ module Engine
 
         def process_lay_tile(action)
           super
-          action.tile.label = nil if action.hex.tile.name == COPPER_CANYON
+          return unless action.tile.name == COPPER_CANYON
+
+          action.tile.label = nil
+          @game.log << "#{@game.p2_company.name} closes"
+          @game.p2_company.close!
         end
 
         private

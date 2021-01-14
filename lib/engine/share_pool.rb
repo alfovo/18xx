@@ -28,9 +28,12 @@ module Engine
       nil
     end
 
-    def buy_shares(entity, shares, exchange: nil, exchange_price: nil)
+    def buy_shares(entity, shares, exchange: nil, exchange_price: nil, swap: nil)
       bundle = shares.is_a?(ShareBundle) ? shares : ShareBundle.new(shares)
-      @game.game_error('Cannot buy share from player') if shares.owner.player?
+
+      if !@game.class::CORPORATE_BUY_SHARE_ALLOW_BUY_FROM_PRESIDENT && shares.owner.player?
+        raise GameError, 'Cannot buy share from player'
+      end
 
       corporation = bundle.corporation
       ipoed = corporation.ipoed
@@ -45,10 +48,18 @@ module Engine
                 "#{@game.format_currency(par_price)}"
       end
 
-      share_str = "a #{bundle.percent}% share of #{corporation.name}"
+      share_str = "a #{bundle.percent}% share "
+      share_str += "of #{corporation.name}" unless entity == corporation
       incremental = corporation.capitalization == :incremental
 
-      from = bundle.owner.corporation? ? "the #{@game.class::IPO_NAME}" : 'the market'
+      from = if bundle.owner.corporation?
+               (bundle.owner == bundle.corporation ? "the #{@game.ipo_name(corporation)}" : bundle.owner.name)
+             elsif bundle.owner.player?
+               bundle.owner.name
+             else
+               'the market'
+             end
+
       if exchange
         price = exchange_price || 0
         case exchange
@@ -63,9 +74,12 @@ module Engine
                   end
         end
       else
-        @log << "#{entity.name} buys #{share_str} "\
+        price -= swap.price if swap
+        swap_text = swap ? " + swap of a #{swap.percent}% share" : ''
+        verb = entity == corporation ? 'redeems' : 'buys'
+        @log << "#{entity.name} #{verb} #{share_str} "\
           "from #{from} "\
-          "for #{@game.format_currency(price)}"
+          "for #{@game.format_currency(price)}#{swap_text}"
       end
 
       if price.zero?
@@ -75,23 +89,37 @@ module Engine
           bundle,
           entity,
           spender: entity == self ? @bank : entity,
-          receiver: incremental && bundle.owner.corporation? ? bundle.owner : @bank,
-          price: price
+          receiver: (incremental && bundle.owner.corporation?) || bundle.owner.player? ? bundle.owner : @bank,
+          price: price,
+          swap: swap,
+          swap_to_entity: swap ? self : nil
         )
       end
 
       @game.float_corporation(corporation) unless floated == corporation.floated?
     end
 
-    def sell_shares(bundle)
+    def sell_shares(bundle, allow_president_change: true, swap: nil)
       entity = bundle.owner
 
-      verb = entity.corporation? ? 'issues' : 'sells'
+      verb = entity.corporation? && entity == bundle.corporation ? 'issues' : 'sells'
+
+      price = bundle.price
+      price -= swap.price if swap
+      swap_text = swap ? " and a #{swap.percent}% share" : ''
+      swap_to_entity = swap ? entity : nil
 
       @log << "#{entity.name} #{verb} #{num_presentation(bundle)} " \
-        "#{bundle.corporation.name} and receives #{@game.format_currency(bundle.price)}"
+        "of #{bundle.corporation.name} and receives #{@game.format_currency(price)}#{swap_text}"
 
-      transfer_shares(bundle, self, spender: @bank, receiver: entity)
+      transfer_shares(bundle,
+                      self,
+                      spender: @bank,
+                      receiver: entity,
+                      price: price,
+                      allow_president_change: allow_president_change,
+                      swap: swap,
+                      swap_to_entity: swap_to_entity)
     end
 
     def share_pool?
@@ -106,26 +134,39 @@ module Engine
       percent_of(corporation) >= @game.class::MARKET_SHARE_LIMIT
     end
 
-    def transfer_shares(bundle, to_entity, spender: nil, receiver: nil, price: nil)
+    def transfer_shares(bundle, to_entity,
+                        spender: nil,
+                        receiver: nil,
+                        price: nil,
+                        allow_president_change: true,
+                        swap: nil,
+                        swap_to_entity: nil)
       corporation = bundle.corporation
       owner = bundle.owner
       previous_president = bundle.president
-      percent = bundle.percent
       price ||= bundle.price
 
-      corporation.share_holders[owner] -= percent
-      corporation.share_holders[to_entity] += percent
+      corporation.share_holders[owner] -= bundle.percent
+      corporation.share_holders[to_entity] += bundle.percent
+
+      if swap
+        # Need to handle this separately as transfer and swap
+        # might be between different pair (ie player buy from IPO
+        # and the player's swap share end up in Market)
+        corporation.share_holders[swap.owner] -= swap.percent
+        corporation.share_holders[swap_to_entity] += swap.percent
+        move_share(swap, swap_to_entity)
+      end
 
       spender.spend(price, receiver) if spender && receiver && price.positive?
       bundle.shares.each { |s| move_share(s, to_entity) }
 
-      # check if we need to change presidency
-      max_shares = corporation.player_share_holders.values.max
+      return unless allow_president_change
 
-      majority_share_holders = corporation
-        .player_share_holders
-        .select { |_, p| p == max_shares }
-        .keys
+      # check if we need to change presidency
+      max_shares = presidency_check_shares(corporation).values.max
+
+      majority_share_holders = presidency_check_shares(corporation).select { |_, p| p == max_shares }.keys
 
       return if majority_share_holders.any? { |player| player == previous_president }
 
@@ -163,15 +204,23 @@ module Engine
 
       num_shares = presidents_share.percent / corporation.share_percent
 
-      possible_reorder(president.shares_of(corporation)).take(num_shares).each { |s| move_share(s, swap_to) }
+      shares_for_presidency_swap(possible_reorder(president.shares_of(corporation)), num_shares).each do |s|
+        move_share(s, swap_to)
+      end
       move_share(presidents_share, president)
+    end
+
+    def presidency_check_shares(corporation)
+      corporation.player_share_holders
+    end
+
+    def shares_for_presidency_swap(shares, num_shares)
+      shares.take(num_shares)
     end
 
     def possible_reorder(shares)
       shares
     end
-
-    private
 
     def distance(player_a, player_b)
       return 0 if !player_a || !player_b
@@ -182,6 +231,8 @@ module Engine
       a < b ? b - a : b - (a - entities.size)
     end
 
+    private
+
     def move_share(share, to_entity)
       corporation = share.corporation
       share.owner.shares_by_corporation[corporation].delete(share)
@@ -191,9 +242,9 @@ module Engine
 
     def num_presentation(bundle)
       num_shares = bundle.num_shares
-      return "a #{bundle.percent}% share of" if num_shares == 1
+      return "a #{bundle.percent}% share" if num_shares == 1
 
-      "#{num_shares} share#{num_shares > 1 ? 's' : ''}"
+      "#{num_shares} shares"
     end
   end
 end

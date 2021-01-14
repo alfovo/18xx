@@ -20,17 +20,20 @@ module View
           actions = @round.actions_for(entity)
           auctioning_corporation = @step.auctioning_corporation if @step.respond_to?(:auctioning_corporation)
           corporation_to_merge_into = @step.merge_target if @step.respond_to?(:merge_target)
-          merge_entity = auctioning_corporation || corporation_to_merge_into || entity
+          buyer = @step.buyer if @step.respond_to?(:buyer)
+          merge_entity = buyer || auctioning_corporation || corporation_to_merge_into || entity
 
           if @step.respond_to?(:mergeable)
             mergeable_entities = @step.mergeable(merge_entity)
             player_corps = mergeable_entities.select do |target|
               target.owner == merge_entity.owner || @step.show_other_players
             end
-            @selected_corporation = player_corps.first if player_corps.one?
+            @selected_corporation = player_corps.first if player_corps.one? && !@selected_corporation
           end
 
           children = []
+
+          children << h(Choose) if actions.include?('choose')
 
           if (%w[buy_shares sell_shares] & actions).any?
             return h(CashCrisis) if @step.respond_to?(:needed_cash)
@@ -40,7 +43,7 @@ module View
             children << h(Corporation, corporation: corporation)
             children << h(BuySellShares, corporation: corporation)
             children << h(Player, game: @game, player: entity) if entity.player?
-            return h(:div, children)
+            return h(:div, children.compact)
           end
 
           buttons = []
@@ -50,7 +53,7 @@ module View
           corps_actionable = (%w[assign merge] & actions).any?
           buttons << render_offer(entity, auctioning_corporation) if actions.include?('assign')
 
-          buttons << render_merge(entity, auctioning_corporation) if actions.include?('merge')
+          buttons << render_merge(entity) if actions.include?('merge')
           children << h(:div, buttons) if buttons.any?
 
           props = {
@@ -82,7 +85,7 @@ module View
             hidden_corps = false
             mergeable_entities.each do |target|
               corp = @selected_corporation if corps_actionable
-              if @step.show_other_players || @show_other_players || target.owner == merge_entity.owner
+              if @step.show_other_players || @show_other_players || target.owner == merge_entity.owner || !target.owner
                 children << h(Corporation, corporation: target, selected_corporation: corp)
               else
                 hidden_corps = true
@@ -109,7 +112,7 @@ module View
           end
 
           right = []
-          right << h(Map, game: @game) if actions.include?('remove_token')
+          right << h(Map, game: @game) if actions.include?('remove_token') || actions.include?('place_token')
           # Switch to the OR mode layout
           if right.any?
             left_props = {
@@ -151,19 +154,31 @@ module View
           )
         end
 
-        def render_merge(corporation, auctioning_corporation)
+        def render_merge(corporation)
           merge = lambda do
             if @selected_corporation
-              process_action(Engine::Action::Merge.new(
-                corporation,
-                corporation: @selected_corporation,
-              ))
+              merge_corporation = @selected_corporation
+              do_merge = lambda do
+                process_action(Engine::Action::Merge.new(
+                  corporation,
+                  corporation: merge_corporation,
+                ))
+              end
+
+              if @step.show_other_players ||
+                !merge_corporation.owner ||
+                merge_corporation.owner == corporation.owner
+                do_merge.call
+              else
+                check_consent(merge_corporation.owner, do_merge)
+              end
+
             else
               store(:flash_opts, 'Select a corporation to merge with')
             end
           end
 
-          h(:button, { on: { click: merge } }, auctioning_corporation ? 'Acquire' : 'Merge')
+          h(:button, { on: { click: merge } }, @step.merge_name)
         end
       end
     end

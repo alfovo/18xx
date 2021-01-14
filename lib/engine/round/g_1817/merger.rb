@@ -10,6 +10,10 @@ module Engine
           'Merger and Conversion Round'
         end
 
+        def self.short_name
+          'MR'
+        end
+
         def select_entities
           @game
             .corporations
@@ -36,6 +40,7 @@ module Engine
         end
 
         def purchase_tokens(corporation)
+          return @tokens_needed = nil if @tokens_needed.zero?
           return unless token_cost.positive?
           return if needs_money?(corporation)
 

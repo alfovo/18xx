@@ -13,11 +13,26 @@ module Engine
   "currencyFormatStr": "$%d",
   "bankCash": 12000,
   "certLimit": {
-    "2": 28,
-    "3": 20,
-    "4": 16,
-    "5": 13,
-    "6": 11
+    "2": {
+      "10" : 28,
+      "9" : 24
+    },
+    "3": {
+      "10" : 20,
+      "9" : 17
+    },
+    "4": {
+      "10" : 16,
+      "9" : 14
+    },
+    "5": {
+      "10" : 13,
+      "9" : 11
+    },
+    "6": {
+      "10" : 11,
+      "9" : 9
+    }
   },
   "startingCash": {
     "2": 1050,
@@ -49,14 +64,18 @@ module Engine
     "M6": "Houston",
     "M14": "Baton Rouge",
     "M20": "Mobile",
-    "M24": "Southeast",
+    "M22": "Southeast",
     "N1": "Southwest",
     "N7": "Galveston",
     "N17": "New Orleans"
   },
   "tiles": {
-    "5": 2,
-    "6": 2,
+    "1": 1,
+    "2": 1,
+    "3": 3,
+    "4": 6,
+    "5": 5,
+    "6": 5,
     "7": 9,
     "8": 22,
     "9": 23,
@@ -87,7 +106,9 @@ module Engine
     "56": 1,
     "57": 5,
     "58": 4,
+    "63": 5,
     "69": 1,
+    "70": 2,
     "141": 2,
     "142": 2,
     "143": 1,
@@ -95,9 +116,17 @@ module Engine
     "145": 2,
     "146": 2,
     "147": 2,
-    "170": 1,
-    "171": 1,
-    "172": 1
+    "170": 4,
+    "171K":{
+       "count":1,
+       "color":"gray",
+       "code":"city=revenue:60,slots:3;path=a:0,b:_0;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;label=K"
+    },
+    "172L":{
+       "count":1,
+       "color":"gray",
+       "code":"city=revenue:60,slots:2;path=a:0,b:_0;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;label=L"
+    }
   },
   "market": [
     [
@@ -163,11 +192,11 @@ module Engine
       "180",
       "200",
       "225",
-      "250",
-      "285",
-      "300",
-      "325",
-      "350"
+      "250i",
+      "285i",
+      "300i",
+      "325i",
+      "350i"
     ],
     [
       "50o",
@@ -183,14 +212,14 @@ module Engine
       "110",
       "120",
       "140",
-      "160",
-      "180",
-      "200",
-      "225",
-      "250",
-      "285",
-      "300",
-      "325"
+      "160i",
+      "180i",
+      "200i",
+      "225i",
+      "250i",
+      "285i",
+      "300i",
+      "325i"
     ],
     [
       "40b",
@@ -204,11 +233,11 @@ module Engine
       "82",
       "90",
       "100",
-      "110",
-      "120",
-      "140",
-      "160",
-      "180"
+      "110i",
+      "120i",
+      "140i",
+      "160i",
+      "180i"
     ],
     [
       "30b",
@@ -221,9 +250,9 @@ module Engine
       "72",
       "78",
       "82",
-      "90",
-      "100",
-      "110"
+      "90i",
+      "100i",
+      "110i"
     ],
     [
       "20b",
@@ -235,8 +264,8 @@ module Engine
       "64",
       "68",
       "72",
-      "78",
-      "82"
+      "78i",
+      "82i"
     ],
     [
       "10b",
@@ -247,8 +276,8 @@ module Engine
       "55y",
       "60y",
       "64",
-      "68",
-      "72"
+      "68i",
+      "72i"
     ],
     [
       "0c",
@@ -258,8 +287,8 @@ module Engine
       "40o",
       "50y",
       "55y",
-      "60",
-      "64"
+      "60i",
+      "64i"
     ],
     [
       "0c",
@@ -290,23 +319,31 @@ module Engine
     },
     {
       "name": "Mississippi River Bridge Company",
-      "value": 30,
-      "revenue": 5,
+      "value": 40,
+      "revenue": 10,
       "desc": "Until this company is closed or sold to a public company, no company may bridge the Mississippi River. A company may lay track along the river, but may not lay track to cross the river, or do an upgrade that would cause track to cross the river. The public company that purchases the Mississippi River Bridge Company may build in one of the hexes along the Mississippi River for a $40 discount. This company may be purchased by one of the two companies on the Mississippi River (Missouri Pacific or St.Louis Southwestern) in phase one for $20 to $40. If one of these two public companies purchases this private company during their first operating round, that company can lay a tile at its starting city for no cost and in addition to its normal tile lay(s). The company cannot lay a tile in their starting city and upgrade it during the same operating round.",
       "sym": "MRBC",
       "abilities": [
         {
-          "type": "blocks_hexes",
-          "owner_type": "player",
-          "hexes": [
-            "N10"
-          ]
+          "type": "blocks_partition",
+          "partition_type": "water",
+          "owner_type": "player"
         },
         {
-          "type":"tile_discount",
-          "discount": 40,
-          "terrain": "river",
-          "owner_type": "corporation"
+          "type":"tile_lay",
+          "owner_type": "corporation",
+          "count": 1,
+          "reachable": true,
+          "special": false,
+          "when": "track",
+          "hexes": [
+            "H17",
+            "L13",
+            "M14",
+            "N15",
+            "O16"
+          ],
+          "tiles": []
         }
       ]
     },
@@ -320,21 +357,20 @@ module Engine
         {
           "type": "assign_hexes",
           "hexes": [
-            "A2",
-            "B5",
-            "B6",
-            "D3",
-            "E7",
-            "F4",
-            "H7",
-            "J2",
+            "B9",
+            "B11",
+            "D5",
+            "E12",
+            "F5",
+            "H13",
             "J3",
-            "L6",
+            "J5",
+            "L11",
             "M2",
-            "M4",
-            "N1",
-            "N4"
+            "M14",
+            "N7"
           ],
+          "when": "track",
           "count": 1,
           "owner_type": "corporation"
         },
@@ -362,7 +398,7 @@ module Engine
             "N7",
             "N17"
           ],
-          "count": 1,
+          "count": 2,
           "owner_type": "corporation"
         },
         {
@@ -385,7 +421,7 @@ module Engine
           "shares": "SLSF_0"
         },
         {
-          "type": "close"
+          "type": "no_buy"
         }
       ]
     },
@@ -414,6 +450,15 @@ module Engine
         40,
         100
       ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "N1"
+          ],
+          "count": 1
+        }
+      ],
       "coordinates": "B9",
       "color": "deepskyblue"
     },
@@ -425,6 +470,15 @@ module Engine
       "tokens": [
         0,
         40
+      ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "J3"
+          ],
+          "count": 1
+        }
       ],
       "coordinates": "H17",
       "color": "blue"
@@ -439,7 +493,16 @@ module Engine
         40,
         100
       ],
-      "coordinates": "J3",
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "N17"
+          ],
+          "count": 1
+        }
+      ],
+      "coordinates": "N1",
       "color": "orange"
     },
     {
@@ -451,6 +514,15 @@ module Engine
         0,
         40,
         100
+      ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "M22"
+          ],
+          "count": 1
+        }
       ],
       "coordinates": "E12",
       "color": "red"
@@ -465,6 +537,15 @@ module Engine
         40,
         100
       ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "J5"
+          ],
+          "count": 1
+        }
+      ],
       "coordinates": "C18",
       "color": "brown"
     },
@@ -478,6 +559,15 @@ module Engine
         40,
         100
       ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "N1"
+          ],
+          "count": 1
+        }
+      ],
       "coordinates": "B11",
       "color": "green"
     },
@@ -489,6 +579,15 @@ module Engine
       "tokens": [
         0,
         40
+      ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "A22"
+          ],
+          "count": 1
+        }
       ],
       "coordinates": "K16",
       "color": "slategrey"
@@ -502,6 +601,15 @@ module Engine
         0,
         40
       ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "C18"
+          ],
+          "count": 1
+        }
+      ],
       "coordinates": "M20",
       "color": "pink"
     },
@@ -514,6 +622,15 @@ module Engine
         0,
         40
       ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "A2"
+          ],
+          "count": 1
+        }
+      ],
       "coordinates": "J3",
       "color": "purple"
     },
@@ -525,6 +642,15 @@ module Engine
       "tokens": [
         0,
         40
+      ],
+      "abilities": [
+        {
+          "type": "assign_hexes",
+          "hexes": [
+            "N17"
+          ],
+          "count": 1
+        }
       ],
       "coordinates": "J5",
       "color": "black"
@@ -543,7 +669,10 @@ module Engine
       "distance": 3,
       "price": 180,
       "rusts_on": "6",
-      "num": 6
+      "num": 6,
+      "events": [
+        {"type": "companies_buyable"}
+      ]
     },
     {
       "name": "4",
@@ -676,10 +805,12 @@ module Engine
         "F5",
         "H13",
         "J3",
-        "J5",
         "K16",
         "M2",
         "M6"
+      ],
+      "city=revenue:0;label=P": [
+        "J5"
       ],
       "town=revenue:0": [
         "B7",
@@ -712,7 +843,7 @@ module Engine
         "J11",
         "K10"
       ],
-      "city=revenue:0;upgrade=cost:40,terrain:water": [
+      "city=revenue:0;upgrade=cost:40,terrain:water;label=P": [
         "B11"
       ],
       "city=revenue:0;upgrade=cost:60,terrain:water": [
@@ -727,38 +858,50 @@ module Engine
         "I10",
         "E20"
       ],
-      "upgrade=cost:40,terrain:river": [
+      "upgrade=cost:40,terrain:river;partition=a:0-,b:2+,type:water": [
         "B17"
       ],
-      "upgrade=cost:60,terrain:river": [
-        "D17",
-        "E18",
-        "F19",
+      "upgrade=cost:60,terrain:river;partition=a:3-,b:5+,type:water": [
+        "E18"
+      ],
+      "upgrade=cost:60,terrain:river;partition=a:1-,b:3-,type:water": [
+        "F19"
+      ],
+      "upgrade=cost:60,terrain:river;partition=a:1-,b:3+,type:water": [
         "G18",
-        "I16",
+        "I16"
+      ],
+      "upgrade=cost:60,terrain:river;partition=a:0+,b:3+,type:water": [
         "J15"
       ],
-      "upgrade=cost:80,terrain:river": [
-        "L13",
+      "upgrade=cost:80,terrain:river;partition=a:0-,b:4-,type:water": [
+        "L13"
+      ],
+      "upgrade=cost:80,terrain:river;partition=a:2+,b:5+,type:water": [
         "N15"
       ],
-      "upgrade=cost:100,terrain:river": [
-        "O16",
+      "upgrade=cost:100,terrain:river;partition=a:3-,b:4+,type:water": [
+        "O16"
+      ],
+      "upgrade=cost:100,terrain:river;partition=a:0-,b:2-,type:water;border=edge:3,type:impassable": [
         "O18"
       ],
-      "city=revenue:0;upgrade=cost:40,terrain:river": [
+      "city=revenue:0;upgrade=cost:40,terrain:river;partition=a:0+,b:2+,type:water,restrict:inner;label=P": [
         "C18"
       ],
-      "city=revenue:0;upgrade=cost:40,terrain:river;icon=image:port": [
+      "city=revenue:0;upgrade=cost:40,terrain:river;icon=image:port;partition=a:0-,b:2+,type:water,restrict:outer": [
         "M14"
       ],
-      "city=revenue:0;upgrade=cost:60,terrain:river;icon=image:port": [
+      "city=revenue:0;upgrade=cost:60,terrain:river;icon=image:port;partition=a:1-,b:3+,type:water,restrict:outer": [
         "H17"
       ],
-      "town=revenue:0;upgrade=cost:80,terrain:river": [
+      "town=revenue:0;upgrade=cost:40,terrain:river;partition=a:4-,b:5+,type:water": [
+        "D17"
+      ],
+      "town=revenue:0;upgrade=cost:80,terrain:river;partition=a:0+,b:4-,type:water,restrict:outer": [
         "K14"
       ],
-      "town=revenue:0;town=revenue:0;upgrade=cost:40,terrain:river": [
+      "town=revenue:0;town=revenue:0;upgrade=cost:40,terrain:river;partition=a:0-,b:3,type:water": [
         "A16"
       ],
       "upgrade=cost:60,terrain:lake": [
@@ -778,7 +921,9 @@ module Engine
         "O14"
       ],
       "city=revenue:0;upgrade=cost:80,terrain:lake;icon=image:port": [
-        "N7",
+        "N7"
+      ],
+      "city=revenue:0;upgrade=cost:80,terrain:lake;icon=image:port;border=edge:4,type:impassable;label=P": [
         "N17"
       ],
       "town=revenue:0;upgrade=cost:80,terrain:lake": [
@@ -798,16 +943,16 @@ module Engine
       ]
     },
     "red": {
-      "offboard=revenue:yellow_30|brown_40|blue_50;path=a:4,b:_0;path=a:5,b:_0": [
+      "city=revenue:yellow_30|brown_40|blue_50,slots:0;path=a:4,b:_0,terminal:1;path=a:5,b:_0,terminal:1": [
         "A2"
       ],
-      "offboard=revenue:yellow_40|brown_50|blue_60;path=a:0,b:_0;path=a:1,b:_0": [
+      "city=revenue:yellow_40|brown_50|blue_60,slots:0;path=a:0,terminal:1,b:_0;path=a:1,b:_0,terminal:1": [
         "A22"
       ],
       "city=revenue:yellow_20|brown_40|blue_50;path=a:3,b:_0,terminal:1;path=a:4,b:_0,terminal:1;path=a:5,b:_0,terminal:1": [
         "N1"
       ],
-      "offboard=revenue:yellow_20|brown_30|blue_50;path=a:0,b:_0;path=a:1,b:_0;path=a:2,b:_0": [
+      "city=revenue:yellow_20|brown_30|blue_50,slots:0;path=a:0,b:_0,terminal:1;path=a:1,b:_0,terminal:1;path=a:2,b:_0,terminal:1": [
         "M22"
       ]
     }
@@ -819,7 +964,10 @@ module Engine
       "tiles": [
         "yellow"
       ],
-      "operating_rounds": 1
+      "operating_rounds": 1,
+      "status": [
+        "can_buy_companies_from_other_players"
+      ]
     },
     {
       "name": "2",
@@ -830,8 +978,9 @@ module Engine
         "green"
       ],
       "operating_rounds": 2,
-      "status":[
-        "can_buy_companies"
+      "status": [
+        "can_buy_companies",
+        "can_buy_companies_from_other_players"
       ]
     },
     {
@@ -843,8 +992,10 @@ module Engine
         "green"
       ],
       "operating_rounds": 2,
-      "status":[
-        "can_buy_companies"
+      "status": [
+        "can_buy_companies",
+        "can_buy_companies_from_other_players"
+
       ]
     },
     {
@@ -878,7 +1029,8 @@ module Engine
         "yellow",
         "green",
         "brown",
-        "gray"
+        "gray",
+        "blue"
       ],
       "operating_rounds": 3
     },
@@ -890,7 +1042,8 @@ module Engine
         "yellow",
         "green",
         "brown",
-        "gray"
+        "gray",
+        "blue"
       ],
       "operating_rounds": 3
     },
@@ -902,7 +1055,8 @@ module Engine
         "yellow",
         "green",
         "brown",
-        "gray"
+        "gray",
+        "blue"
       ],
       "operating_rounds": 3
     }

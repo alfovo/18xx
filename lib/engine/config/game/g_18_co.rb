@@ -13,7 +13,7 @@ module Engine
 	"currencyFormatStr": "$%d",
 	"bankCash": 10000,
 	"certLimit": {
-		"3": 19,
+		"3": 17,
 		"4": 14,
 		"5": 12,
 		"6": 10
@@ -75,15 +75,27 @@ module Engine
 		"L20": "Fort Worth, TX"
 	},
 	"tiles": {
-		"3": 6,
-		"4": 6,
+		"3a": {
+			"count": 6,
+			"color": "yellow",
+			"code": "town=revenue:10,to_city:1;path=a:0,b:_0;path=a:_0,b:1"
+		},
+		"4a": {
+			"count": 6,
+			"color": "yellow",
+			"code": "town=revenue:10,to_city:1;path=a:0,b:_0;path=a:_0,b:3"
+		},
 		"5": 3,
 		"6": 6,
 		"7": 15,
 		"8": 25,
 		"9": 25,
 		"57": 6,
-		"58": 6,
+		"58a": {
+			"count": 6,
+			"color": "yellow",
+			"code": "town=revenue:10,to_city:1;path=a:0,b:_0;path=a:_0,b:2"
+		},
 		"co1": {
 			"count": 1,
 			"color": "yellow",
@@ -92,7 +104,7 @@ module Engine
 		"co5": {
 			"count": 1,
 			"color": "yellow",
-			"code": "city=revenue:20;city=revenue:20,hide:1;path=a:0,b:_0;path=a:_0,b:5;path=a:2,b:_1;path=a:_1,b:4;label=CS;"
+			"code": "city=revenue:20;city=revenue:20,hide:1;path=a:0,b:_0;path=a:_0,b:5;path=a:2,b:_1;path=a:_1,b:4;label=C;"
 		},
 		"14": 4,
 		"15": 4,
@@ -133,7 +145,7 @@ module Engine
 		"co6": {
 			"count": 1,
 			"color": "green",
-			"code": "city=revenue:40,slots:2;path=a:0,b:_0;path=a:2,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;label=CS;"
+			"code": "city=revenue:40,slots:2;path=a:0,b:_0;path=a:2,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;label=C;"
 		},
 		"39": 1,
 		"40": 2,
@@ -158,7 +170,7 @@ module Engine
 		"co7": {
 			"count": 1,
 			"color": "brown",
-			"code": "city=revenue:60,slots:3;path=a:0,b:_0,;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;label=CS;"
+			"code": "city=revenue:60,slots:3;path=a:0,b:_0,;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;label=C;"
 		}
 	},
 	"market": [
@@ -186,8 +198,8 @@ module Engine
 			"120",
 			"125",
 			"135",
-			"145p",
-			"160p",
+			"145z",
+			"160z",
 			"175",
 			"195",
 			"220",
@@ -202,10 +214,10 @@ module Engine
 			"85",
 			"90",
 			"95",
-			"100p",
-			"110p",
-			"120p",
-			"135p",
+			"100x",
+			"110x",
+			"120z",
+			"135z",
 			"150",
 			"170",
 			"195",
@@ -220,8 +232,8 @@ module Engine
 			"65",
 			"70",
 			"75p",
-			"80p",
-			"90p",
+			"80x",
+			"90x",
 			"100",
 			"115",
 			"130",
@@ -329,7 +341,7 @@ module Engine
 				{
 					"type": "close",
 					"owner_type": "corporation",
-					"when": "6"
+					"on_phase": "6"
 				}
 			]
 		},
@@ -338,14 +350,15 @@ module Engine
 			"name": "Grand Junction and Grand River Valley Railway",
 			"value": 40,
 			"revenue": 10,
-			"desc": "An owning Corporation may upgrade a yellow town to a green city in additional to its normal tile lay. Action closes the company or closes on purchase of “5” train.",
+			"desc": "An owning Corporation may upgrade a yellow town to a green city in additional to its normal tile lay at any time during its turn. This tile does not need to be reachable by the corporation's trains. Action closes the company or closes on purchase of “5” train.",
 			"abilities": [
 				{
 					"type": "tile_lay",
 					"free": true,
 					"owner_type": "corporation",
-					"when": "track",
+					"when": ["special_track"],
 					"count": 1,
+					"special": true,
 					"tiles": [
 						"14",
 						"15"
@@ -385,7 +398,12 @@ module Engine
 			"revenue": 10,
 			"desc": "An owning Corporation may return a station token to its charter to gain the token cost. Corporation must always have at least one token on the board. Action closes the company or closes on purchase of “5” train.",
 			"abilities": [
-
+				{
+					"type": "return_token",
+					"owner_type": "corporation",
+					"count": 1,
+					"reimburse": true
+				}
 			]
 		},
 		{
@@ -397,8 +415,7 @@ module Engine
 			"abilities": [
 				{
 					"type": "tile_discount",
-					"discount": 20,
-					"terrain": "mountain"
+					"discount": 20
 				}
 			]
 		},
@@ -407,7 +424,7 @@ module Engine
 			"name": "Laramie, North Park and Western Railroad",
 			"value": 70,
 			"revenue": 15,
-			"desc": "An owning Corporation may lay an extra tile at no cost in addition to its normal tile lay. Action closes the company or closes on purchase of “5” train.",
+			"desc": "When laying track tiles, an owning Corporation may lay an extra yellow tile at no cost in addition to its normal tile lay. Action closes the company or closes on purchase of “5” train.",
 			"abilities": [
 				{
 					"type": "tile_lay",
@@ -421,7 +438,17 @@ module Engine
 
 					],
 					"tiles": [
-
+						"co1",
+						"co5",
+						"3a",
+						"4a",
+						"5",
+						"6",
+						"7",
+						"8",
+						"9",
+						"57",
+						"58a"
 					]
 				}
 			]
@@ -458,7 +485,8 @@ module Engine
 				},
 				{
 					"type": "close",
-					"corporation": "Durango and Silverton Narrow Gauge"
+					"when": "run_train",
+					"corporation": "DSNG"
 				},
 				{
 					"type": "no_buy"
@@ -480,7 +508,13 @@ module Engine
 				100
 			],
 			"coordinates": "E27",
-			"color": "brown"
+			"color": "brown",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - C"
+				}
+			]
 		},
 		{
 			"sym": "CM",
@@ -496,11 +530,18 @@ module Engine
 				100
 			],
 			"coordinates": "G17",
-			"color": "lightBlue"
+			"color": "lightBlue",
+      "text_color": "black",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - C"
+				}
+			]
 		},
 		{
 			"sym": "CS",
-			"name": "Colorado and Southern Railway",
+			"name": "Colorado & Southern Railway",
 			"group": "III",
 			"float_percent": 40,
 			"always_market_price": true,
@@ -512,7 +553,13 @@ module Engine
 				100
 			],
 			"coordinates": "K17",
-			"color": "black"
+			"color": "#232b2b",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - C"
+				}
+			]
 		},
 		{
 			"sym": "DPAC",
@@ -527,11 +574,17 @@ module Engine
 			],
 			"city": 2,
 			"coordinates": "E15",
-			"color": "purple"
+			"color": "#82009c",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - C"
+				}
+			]
 		},
 		{
 			"sym": "DSL",
-			"name": "Denver and Salt Lake Railroad",
+			"name": "Denver & Salt Lake Railroad",
 			"group": "III",
 			"float_percent": 40,
 			"always_market_price": true,
@@ -542,11 +595,17 @@ module Engine
 			],
 			"city": 1,
 			"coordinates": "E15",
-			"color": "green"
+			"color": "green",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - C"
+				}
+			]
 		},
 		{
 			"sym": "DRG",
-			"name": "Denver and Rio Grande Railroad",
+			"name": "Denver & Rio Grande Railroad",
 			"group": "II",
 			"float_percent": 50,
 			"always_market_price": true,
@@ -561,12 +620,18 @@ module Engine
 			],
 			"city": 0,
 			"coordinates": "E15",
-			"color": "yellow",
-			"text_color": "black"
+			"color": "gold",
+			"text_color": "black",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - B"
+				}
+			]
 		},
 		{
 			"sym": "ATSF",
-			"name": "Atchinson, Tokepa and Santa Fe",
+			"name": "Atchinson, Tokepa & Santa Fe",
 			"group": "II",
 			"float_percent": 50,
 			"always_market_price": true,
@@ -580,11 +645,17 @@ module Engine
 				100
 			],
 			"coordinates": "J26",
-			"color": "blue"
+			"color": "#0323ad",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - B"
+				}
+			]
 		},
 		{
 			"sym": "CBQ",
-			"name": "Chicago, Burlington and Quincy",
+			"name": "Chicago, Burlington & Quincy",
 			"group": "I",
 			"float_percent": 60,
 			"always_market_price": true,
@@ -600,11 +671,17 @@ module Engine
 			],
 			"coordinates": "B26",
 			"color": "orange",
-			"text_color": "black"
+			"text_color": "black",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - A"
+				}
+			]
 		},
 		{
 			"sym": "ROCK",
-			"name": "Chicago, Rock Island and Pacific",
+			"name": "Chicago, Rock Island & Pacific",
 			"group": "I",
 			"float_percent": 60,
 			"always_market_price": true,
@@ -620,7 +697,13 @@ module Engine
 				100
 			],
 			"coordinates": "G27",
-			"color": "red"
+			"color": "red",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - A"
+				}
+			]
 		},
 		{
 			"sym": "UP",
@@ -640,22 +723,39 @@ module Engine
 				100
 			],
 			"coordinates": "A17",
-			"color": "white",
-			"text_color": "black"
+			"color": "#ffffeb",
+      "text_color":"black",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Par Group - A"
+				}
+			]
 		},
 		{
 			"sym": "DSNG",
-			"name": "Durango and Silverton Narrow Gauge",
+			"name": "Durango & Silverton Narrow Gauge",
 			"group": "X",
 			"float_percent": 20,
 			"always_market_price": true,
 			"logo": "18_co/DSNG",
+			"shares":[20, 10, 20, 20, 10, 10, 10],
 			"tokens": [
 				0,
 				40
 			],
 			"coordinates": "K5",
-			"color": "pink"
+			"color": "#db00c0",
+			"abilities": [
+				{
+					"type": "description",
+					"description": "Pars @ $75(C) via DRG Silverton Branch"
+				},
+        {
+					"type": "base",
+					"description": "Shares: 2P/2/2/1/1/1/1"
+				}
+			]
 		}
 	],
 	"trains": [
@@ -772,6 +872,9 @@ module Engine
 			"events": [
 				{
 					"type": "close_companies"
+				},
+				{
+					"type": "unreserve_home_stations"
 				}
 			],
 			"price": 500,
@@ -849,6 +952,11 @@ module Engine
 					"visit": 99
 				}
 			],
+			"events": [
+				{
+					"type": "presidents_choice"
+				}
+			],
 			"available_on": "6",
 			"price": 850,
 			"num": 2
@@ -870,6 +978,11 @@ module Engine
 					],
 					"pay": 99,
 					"visit": 99
+				}
+			],
+			"events": [
+				{
+					"type": "presidents_choice"
 				}
 			],
 			"available_on": "6",
@@ -934,7 +1047,7 @@ module Engine
 				"C15",
 				"K17"
 			],
-			"city=revenue:10;path=a:5,b:_0;path=a:_0,b:0;label=CS;border=edge:1,type:mountain,cost:40;": [
+			"city=revenue:10;path=a:5,b:_0;path=a:_0,b:0;label=C;border=edge:1,type:mountain,cost:40;": [
 				"G17"
 			],
 			"city=revenue:10;city=revenue:0,loc:7;city=revenue:10;path=a:5,b:_0;path=a:3,b:_2;label=D;border=edge:0,type:mountain,cost:40;border=edge:1,type:mountain,cost:40;": [
@@ -1012,7 +1125,7 @@ module Engine
 			"town=revenue:0;upgrade=cost:40,terrain:mountain;icon=image:18_co/mine,sticky:1,name:mine;border=edge:0,type:mountain,cost:40;border=edge:1,type:mountain,cost:40;border=edge:4,type:mountain,cost:40;border=edge:5,type:mountain,cost:40;": [
 				"E11"
 			],
-			"town=revenue:0;upgrade=cost:40,terrain:mountain;icon=image:18_co/mine,sticky:1,name:mine;border=edge:0,type:mountain,cost:40;border=edge:0,type:mountain,cost:40;border=edge:4,type:mountain,cost:40;border=edge:5,type:mountain,cost:40;": [
+			"town=revenue:0;upgrade=cost:40,terrain:mountain;icon=image:18_co/mine,sticky:1,name:mine;border=edge:0,type:mountain,cost:40;border=edge:4,type:mountain,cost:40;border=edge:5,type:mountain,cost:40;": [
 				"J6"
 			],
 			"town=revenue:0;upgrade=cost:40,terrain:mountain;icon=image:18_co/upgrade,sticky:1,name:upgrade;border=edge:0,type:mountain,cost:40;": [
@@ -1170,10 +1283,7 @@ module Engine
 			"tiles": [
 				"yellow"
 			],
-			"operating_rounds": 2,
-			"status": [
-				"can_buy_companies_from_other_players"
-			]
+			"operating_rounds": 2
 		},
 		{
 			"name": "3",
@@ -1184,8 +1294,7 @@ module Engine
 				"green"
 			],
 			"status": [
-				"can_buy_companies",
-				"can_buy_companies_from_other_players"
+				"can_buy_companies"
 			],
 			"operating_rounds": 2
 		},
@@ -1198,8 +1307,7 @@ module Engine
 				"green"
 			],
 			"status": [
-				"can_buy_companies",
-				"can_buy_companies_from_other_players"
+				"can_buy_companies"
 			],
 			"operating_rounds": 2
 		},
@@ -1212,6 +1320,9 @@ module Engine
 				"green",
 				"brown"
 			],
+			"status": [
+				"closable_corporations"
+			],
 			"operating_rounds": 2
 		},
 		{
@@ -1222,6 +1333,9 @@ module Engine
 				"yellow",
 				"green",
 				"brown"
+			],
+			"status": [
+				"closable_corporations"
 			],
 			"operating_rounds": 2
 		},
@@ -1234,16 +1348,23 @@ module Engine
 				"green",
 				"brown"
 			],
+			"status": [
+				"closable_corporations"
+			],
 			"operating_rounds": 2
 		},
 		{
 			"name": "6b",
-			"on": "5D",
+			"on": ["5D", "E"],
 			"train_limit": 2,
 			"tiles": [
 				"yellow",
 				"green",
 				"brown"
+			],
+			"status": [
+				"closable_corporations",
+				"corporate_shares_open"
 			],
 			"operating_rounds": 2
 		},
@@ -1255,6 +1376,11 @@ module Engine
 				"yellow",
 				"green",
 				"brown"
+			],
+			"status":[
+				"closable_corporations",
+				"corporate_shares_open",
+				"reduced_tile_lay"
 			],
 			"operating_rounds": 2
 		}
